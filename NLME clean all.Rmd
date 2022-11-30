@@ -1,0 +1,3162 @@
+---
+title: "NLME clean all"
+output: html_document
+---
+
+### load packages 
+```{r}
+pacman::p_load(
+  tidyverse,
+  readxl,
+  nlme,
+  ggplot2,
+  boot,
+  emmeans,
+  MASS,
+  ggpubr,
+  agricolae,
+  AICcmodavg,
+  Metrics,
+  multcompView,
+  data.table,
+  cowplot,
+  lemon)
+```
+
+# import data
+```{r}
+PDMS_2018_2020 <- read_excel("../PDMS 2018-2020 .xlsx", sheet = "Together") %>%
+  mutate(Percent.cover = AST + BOVO + BSC + Bug + CIO + MED + MEMB + SCSP + SmC + TubSp + UnkTUN)
+PDMS_2018_2020$Trt <-  as.factor(PDMS_2018_2020$Trt)
+```
+
+# Create data sets 
+and visualized data grouped by treatments
+
+## plot function
+```{r}
+# coloured
+plotting_biof <- function(x) {
+  y <- x %>%
+    group_by(Days.after.Deployment, Trt, Site) %>%
+    summarize(se = std(Percent.cover), avg_PC = mean(Percent.cover))
+  ggplot(data = y, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt)) +
+    geom_point() +
+    geom_line() +
+    geom_errorbar()
+}
+
+## minor ticks for graph (https://stackoverflow.com/questions/34533472/insert-blanks-into-a-vector-for-e-g-minor-tick-labels-in-r)
+every_nth <- function(x, nth, empty = TRUE, inverse = FALSE) 
+  {
+  if (!inverse) {
+    if(empty) {
+      x[1:nth == 1] <- ""
+      x
+      } else {
+        x[1:nth != 1]
+        }
+    } else {
+      if(empty) {
+        x[1:nth != 1] <- ""
+        x
+        } else {
+          x[1:nth == 1]
+        }
+    }
+}
+
+#black and white
+plotting_biof_pub <- function(x) {
+  y <- x %>%
+    group_by(Days.after.Deployment, Trt, Site) %>%
+    summarize(se = std(Percent.cover), avg_PC = mean(Percent.cover))
+  ggplot(data = y, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt)) +
+    geom_point(aes(shape = Trt), position = position_dodge(width = 2.5)) +
+    geom_line(position = position_dodge(width = 2.5)) +
+    geom_errorbar(position = position_dodge(width = 2.5)) +
+    scale_colour_grey(start = 0, end = 0.8) +
+    theme_classic(base_size = 12, base_family = "Arial") +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in"))) +
+    xlab("Days after deployment") +
+    ylab("Average cover (%)") +
+    scale_x_continuous(limits = c(-2.5, 102.5), breaks = seq(-2.5, 102.5, 5), labels = every_nth(seq(0, 105, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+}
+
+plotting_biof_pub_col <- function(x) {
+  y <- x %>%
+    group_by(Days.after.Deployment, Trt, Site) %>%
+    summarize(se = std(Percent.cover), avg_PC = mean(Percent.cover))
+  ggplot(data = y, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt)) +
+    geom_point(aes(shape = Trt), size = 0.5, position = position_dodge(width = 2.5)) +
+    geom_line(size = 0.2, position = position_dodge(width = 2.5)) +
+    geom_errorbar(size = 0.2, position = position_dodge(width = 2.5)) +
+    scale_colour_grey(start = 0, end = 0.8) +
+    theme_classic(base_size = 12, base_family = "Arial") +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in")), line = element_line(size = 0.3)) +
+    xlab("Days after deployment") +
+    ylab("Average cover (%)") +
+    scale_x_continuous(limits = c(-2.5, 102.5), breaks = seq(-2.5, 102.5, 5), labels = every_nth(seq(0, 105, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+}
+
+std <- function(x) {
+  sd(x)/sqrt(length(x))
+} 
+
+#model efficiency function (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5375119/)
+MEF <- function(RMSE, obs) {
+  1-(RMSE^2)/(var(obs))
+} 
+```
+
+## 2018 - WB
+MED cover is equivalent to total percent cover because only aspect measured
+```{r}
+PDMS_2018_WB <- PDMS_2018_2020 %>%
+  filter(Site == "WB") %>%
+  dplyr::select("File":"Days.after.Deployment", "BG", "MED", "Grand.Total") %>%
+  rename("Percent.cover" = "MED")
+
+# order
+PDMS_2018_WB$Trt <- factor(PDMS_2018_WB$Trt, levels = c("O2", "SO", "S1", "S2", "PP", "PV"))
+
+#plot coloured
+plotting_biof(PDMS_2018_WB)
+
+# plot published
+WB_plot <- plotting_biof_pub(PDMS_2018_WB)
+WB_plot
+
+WB_plot_col <- plotting_biof_pub_col(PDMS_2018_WB)
+WB_plot_col
+
+# saving full
+WB_plot
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/WB_figure_full.tiff", width = 16.5, height = 11, units = 'cm', res = 1200)
+WB_plot
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/WB_figure_full.jpg", width = 16.5, height = 11, units = 'cm', res = 1200)
+WB_plot
+dev.off()
+
+# saving one column
+WB_plot_col
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/WB_figure_col.jpg", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+WB_plot_col
+dev.off()
+tiff(file = "/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/WB_figure_col.tiff", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+WB_plot_col
+dev.off()
+```
+
+## Percent cover 2019 - LN
+percent cover of all organsism, exclude classifications as any background
+```{r}
+PDMS_2019_LN <- PDMS_2018_2020 %>%
+  filter(Site == "LN") %>%
+  dplyr::select(-("BG")) %>%
+  dplyr::select(-("BB")) %>%
+  mutate(Percent.cover = AST + BOVO + BSC + Bug + CIO + MED + MEMB + SCSP + SmC + TubSp + UnkTUN)
+
+# order
+PDMS_2019_LN$Trt <- factor(PDMS_2019_LN$Trt, levels = c("O1", "SO", "S1", "S2", "PP", "PV"))
+
+# plot
+plotting_biof(PDMS_2019_LN)
+
+# plot publish
+LN_plot <- plotting_biof_pub(PDMS_2019_LN)
+LN_plot
+
+LN_plot_col <- plotting_biof_pub_col(PDMS_2019_LN)
+LN_plot_col
+
+# saving full
+LN_plot
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/LN_figure_full.tiff", width = 16.5, height = 11, units = 'cm', res = 1200)
+LN_plot
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/LN_figure_full.jpg", width = 16.5, height = 11, units = 'cm', res = 1200)
+LN_plot
+dev.off()
+
+# savind one column
+LN_plot_col
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/LN_figure_col.jpg", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+LN_plot_col
+dev.off()
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/LN_figure_col.tiff", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+LN_plot_col
+dev.off()
+```
+
+## Percent cover 2019 - PH
+percent cover of all organsism, exclude classifications as any background
+```{r}
+PDMS_2019_PH <- PDMS_2018_2020 %>%
+  filter(Site == "PH") %>%
+  dplyr::select(-("BG")) %>%
+  dplyr::select(-("BB")) %>%
+  mutate(Percent.cover = AST + BOVO + BSC + Bug + CIO + MED + MEMB + SCSP + SmC + TubSp + UnkTUN)
+
+# order
+PDMS_2019_PH$Trt <- factor(PDMS_2019_PH$Trt, levels = c("O1", "SO", "S1", "S2", "PP", "PV"))
+
+# plot
+plotting_biof(PDMS_2019_PH)
+
+# plot publish
+PH_plot <- plotting_biof_pub(PDMS_2019_PH)
+PH_plot
+
+PH_plot_col <- plotting_biof_pub_col(PDMS_2019_PH)
+PH_plot_col
+
+# saving full
+PH_plot
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/PH_figure_full.tiff", width = 16.5, height = 11, units = 'cm', res = 1200)
+PH_plot
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/PH_figure_full.jpg", width = 16.5, height = 11, units = 'cm', res = 1200)
+PH_plot
+dev.off()
+
+# savind one column
+PH_plot_col
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/PH_figure_col.jpg", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+PH_plot_col
+dev.off()
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/PH_figure_col.tiff", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+PH_plot_col
+dev.off()
+```
+
+## plot togetehr
+```{r}
+PDMS_2018_W <- PDMS_2018_WB %>%
+  dplyr::select(File:Collection, Site, Days.after.Deployment, Percent.cover)
+PDMS_2019_L <- PDMS_2019_LN %>%
+  dplyr::select(File:Collection, Site, Days.after.Deployment, Percent.cover)
+PDMS_2019_P <- PDMS_2019_PH %>%
+  dplyr::select(File:Collection, Site, Days.after.Deployment, Percent.cover)
+
+
+PDMS_2018_W$Site <- gsub('WB', 'Waycobah (2018)', PDMS_2018_W$Site)
+PDMS_2019_L$Site <- gsub('LN', 'Little Narrows (2019)', PDMS_2019_L$Site)
+PDMS_2019_P$Site <- gsub('PH', 'Port Hawkesbury (2019)', PDMS_2019_P$Site)
+
+PDMS_site <- rbind(PDMS_2018_W, PDMS_2019_L, PDMS_2019_P)
+PDMS_site$Trt <- ifelse(PDMS_site$Trt == "O1", "TDA-9 + SO", ifelse(PDMS_site$Trt == "O2", "13E6.5 + SO", ifelse(PDMS_site$Trt == "S1", "TDA-9", ifelse(PDMS_site$Trt == "S2", "13E6.5", ifelse(PDMS_site$Trt == "PP", "PDMS", ifelse(PDMS_site$Trt == "PV", "PVC", "SO"))))))
+PDMS_site$Trt_n <- ifelse(PDMS_site$Trt == "TDA-9 + SO", "1", ifelse(PDMS_site$Trt == "13E6.5 + SO", "2", ifelse(PDMS_site$Trt == "SO", "3", ifelse(PDMS_site$Trt == "TDA-9", "4", ifelse(PDMS_site$Trt == "13E6.5", "5", ifelse(PDMS_site$Trt == "PDMS", "6", "7"))))))
+
+PDMS_site$Trt <- factor(PDMS_site$Trt, levels = c("TDA-9 + SO", "13E6.5 + SO", "SO", "TDA-9", "13E6.5", "PDMS", "PVC"))
+PDMS_site$Site <- factor(PDMS_site$Site, levels = c("Waycobah (2018)", "Little Narrows (2019)", "Port Hawkesbury (2019)"))
+
+site_grouped <- PDMS_site %>% 
+    group_by(Days.after.Deployment, Trt, Site, Trt_n) %>%
+    summarize(se = std(Percent.cover), avg_PC = mean(Percent.cover))
+
+plot_site <- ggplot(data = site_grouped, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt)) +
+    geom_point(aes(shape = Trt)) +
+    geom_line() +
+    geom_errorbar() +
+    facet_wrap("Site", scales = "free", nrow = 2, ncol = 2) +
+    scale_colour_grey(start = 0, end = 0.8) +
+    theme_classic(base_size = 12, base_family = "Arial") +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in")), strip.background = element_rect(color=NA, fill=NA, size=1.5, linetype="solid"), strip.text = element_text(hjust = 0, size = 12)) +
+    xlab("Days after deployment") +
+    ylab("Average cover (%)") +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 100), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 100), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+
+plot_site
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/site_full.tiff", width = 16.5, height = 11, units = 'cm', res = 1200)
+plot_site
+
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/site_full.jpg", width = 16.5, height = 11, units = 'cm', res = 1200)
+plot_site
+dev.off()
+```
+
+## plot together with grouped legend
+```{r}
+cols <- c("1" = "grey0", "2" = "grey14",            
+          "3" = "grey28", "4" = "grey42", "5" = "grey56", 
+          "6" = "grey70", "7" = "grey84") 
+shapes <- c("1" = "circle", "2" = "triangle",            
+          "7" = "square", "3" = "plus", "4" = "diamond", 
+          "5" = "asterisk", "6" = "cross") 
+
+d <- data.table(x = 1, y = 1:7, z = factor(c("TDA-9 + SO", "13E6.5 + SO", "SO", "TDA-9", "13E6.5", "PDMS", "PVC")))
+
+# cut z into groups which should be displayed as text in legend
+d[ , grp := cut(as.numeric(y), breaks = c(0, 1, 2, 8),
+                labels = c("2019", "2018", "Both"))]
+
+# calculate the start, end and mid points of each group
+# used for vertical segments
+d2 <- d[ , .(x = 1, y = min(y), yend = max(y), ymid = mean(y)), by = grp]
+
+# end points of segments in long format, used for horizontal 'ticks' on the segments  
+d3 <- data.table(x = 1, y = unlist(d2[ , .(y, yend)]))
+
+# offset (trial and error)
+v <- 0.4
+
+
+t <- data.table(x = 1, y = 8, Tt = c("Treatment"))
+ty <- data.table(x = 1, y = 8, Yy = c("Year"))
+
+# plot the 'legend'
+p2 <- ggplot(mapping = aes(x = x, y = y)) +
+  geom_point(data = d, aes(color = as.factor(y), shape = as.factor(y)), size = 2.5) +
+  geom_segment(data = d2,
+               aes(x = x + (v-0.075), xend = x + (v-0.075), yend = yend)) +
+  geom_segment(data = d3,
+               aes(x = x + (v-0.075), xend = x + (v-0.105), yend = y)) +
+  geom_text(data = t, aes(x = x + v - 0.3, y = y, label = Tt), size = 3)+
+  geom_text(data = ty, aes(x = x + v + 0.01, y = y, label = Yy), size = 3) +
+  geom_text(data = d, aes(x = x + v - 0.35, y = y, label = z), hjust = 0, size = 3) +
+  geom_text(data = d2, aes(x = x + v + 0.01, y = ymid, label = grp), size = 3) +
+  scale_color_manual(values = cols, guide = FALSE) +
+  scale_shape_manual(values = shapes, guide = FALSE) +
+  scale_x_continuous(limits = c(0.98, 1.46)) +
+  theme_void()
+p2
+
+plot_site_t <- ggplot(data = site_grouped, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt_n)) +
+    geom_point(aes(shape = Trt_n)) +
+    geom_line() +
+    geom_errorbar() +
+    scale_color_manual(values = cols, guide = FALSE) +
+    scale_shape_manual(values = shapes, guide = FALSE) +
+    facet_wrap("Site", scales = "free", nrow = 2, ncol = 2) +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in")), strip.background = element_rect(color=NA, fill=NA, size=1.5, linetype="solid"), strip.text = element_text(hjust = 0.5, size = 12)) +
+    xlab("Days after deployment") +
+    ylab("Average cover (%)") +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+
+plot_site_t
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/site_full_graphs.tiff", width = 16.5, height = 15, units = 'cm', res = 1200)
+plot_site_t
+dev.off()
+
+p2
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/site_full_legend.tiff", width = 4.9, height = 5.5, units = 'cm', res = 1200)
+p2
+dev.off()
+```
+
+## species plots together - only PH
+```{r}
+PDMS_PH_sp <- PDMS_2018_2020 %>%
+  filter(Site == "PH") %>%
+  mutate(cio = CIO + SmC) %>%
+  dplyr::select("cio", "BOVO", "Trt", "Days.after.Deployment", "Code") %>%
+  pivot_longer(cols = c("cio", "BOVO"), names_to = "Species", values_to = "Percent.cover")
+
+PDMS_PH_sp$Trt <- ifelse(PDMS_PH_sp$Trt == "O1", "TDA-9 + SO", ifelse(PDMS_PH_sp$Trt == "O2", "13E6.5 + SO", ifelse(PDMS_PH_sp$Trt == "S1", "TDA-9", ifelse(PDMS_PH_sp$Trt == "S2", "13E6.5", ifelse(PDMS_PH_sp$Trt == "PP", "PDMS", ifelse(PDMS_PH_sp$Trt == "PV", "PVC", "SO"))))))
+PDMS_PH_sp$Trt_n <- ifelse(PDMS_PH_sp$Trt == "TDA-9 + SO", "1", ifelse(PDMS_PH_sp$Trt == "13E6.5 + SO", "2", ifelse(PDMS_PH_sp$Trt == "SO", "3", ifelse(PDMS_PH_sp$Trt == "TDA-9", "4", ifelse(PDMS_PH_sp$Trt == "13E6.5", "5", ifelse(PDMS_PH_sp$Trt == "PDMS", "6", "7"))))))
+
+cols_sp <- c("TDA-9 + SO" = "grey0", "13E6.5 + SO" = "grey14",            
+          "SO" = "grey28", "TDA-9" = "grey42", "13E6.5" = "grey56", 
+          "PDMS" = "grey70", "PVC" = "grey84")  
+shapes_sp <- c("TDA-9 + SO" = "circle", "13E6.5 + SO" = "triangle",            
+          "PVC" = "square", "SO" = "plus", "TDA-9" = "diamond", 
+          "13E6.5" = "asterisk", "PDMS" = "cross") 
+
+PDMS_PH_sp$Species <- ifelse(PDMS_PH_sp$Species == "cio", "C. intestinalis (PH, 2019)", "B. violaceus (PH, 2019)")
+
+PDMS_PH_sp$Trt <- factor(PDMS_PH_sp$Trt, levels = c("TDA-9 + SO", "13E6.5 + SO", "SO", "TDA-9", "13E6.5", "PDMS", "PVC"))
+PDMS_PH_sp$Species <- factor(PDMS_PH_sp$Species, levels = c("C. intestinalis (PH, 2019)", "B. violaceus (PH, 2019)"))
+
+levels(PDMS_PH_sp$Species) = c("C. intestinalis (PH, 2019)"=expression(paste(italic("C. intestinalis "),"(PH, 2019)")),
+               "B. violaceus (PH, 2019)"=expression(paste(italic("B. violaceus "),"(PH, 2019)")))
+
+PH_sp_grouped <- PDMS_PH_sp %>% 
+    group_by(Days.after.Deployment, Trt, Species, Trt_n) %>%
+    summarize(se = std(Percent.cover), avg_PC = mean(Percent.cover))
+
+plot_sp <- ggplot(data = PH_sp_grouped, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt)) +
+    geom_point(aes(shape = Trt)) +
+    geom_line() +
+    geom_errorbar() +
+    scale_color_manual(values = cols_sp, guide = FALSE) +
+    scale_shape_manual(values = shapes_sp, guide = FALSE) +
+    facet_wrap("Species", scales = "free", nrow = 3, ncol = 2, labeller = label_parsed) +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in")), strip.background = element_rect(color=NA, fill=NA, size=1.5, linetype="solid"), strip.text = element_text(hjust = 0.5, size = 12)) +
+    xlab("Days after deployment") +
+    ylab("Average cover (%)") +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+
+
+  
+plot_sp
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_sp_full.tiff", width = 16.5, height = 8, units = 'cm', res = 1200)
+plot_sp
+
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_sp_full.jpg", width = 16.5, height = 8, units = 'cm', res = 1200)
+plot_sp
+dev.off()
+
+plot_sp_t <- ggplot(data = PH_sp_grouped, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt)) +
+    geom_point(aes(shape = Trt)) +
+    geom_line() +
+    geom_errorbar(width=1.5) +
+    scale_color_manual(values = cols_sp, guide = FALSE) +
+    scale_shape_manual(values = shapes_sp, guide = FALSE) +
+    facet_wrap("Species", scales = "free", nrow = 2, ncol = 2, labeller = label_parsed) +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.305, unit = "cm"), size = 10), axis.title.y = element_text(margin = margin(r = 0.305, unit = "cm"), size = 10), strip.background = element_rect(color=NA, fill=NA, size=1.5, linetype="solid"), strip.text = element_text(hjust = 0.5)) +
+    xlab("Days after deployment") +
+    ylab("   ") +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+
+plot_site_t2 <- ggplot(data = site_grouped, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt_n)) +
+    geom_point(aes(shape = Trt_n)) +
+    geom_line() +
+    geom_errorbar(width=1.5) +
+    scale_color_manual(values = cols, guide = FALSE) +
+    scale_shape_manual(values = shapes, guide = FALSE) +
+    facet_wrap("Site", scales = "free", nrow = 2, ncol = 2) +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_blank(), axis.title.y = element_text(margin = margin(r = 0.305, unit = "cm"), hjust = 0, size = 10), strip.background = element_rect(color=NA, fill=NA, size=1.5, linetype="solid"), strip.text = element_text(hjust = 0.5)) +
+    xlab("Days after deployment") +
+    ylab("Average cover (%)") +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+
+
+plot_both <- ggarrange(plot_site_t2, plot_sp_t, ncol = 1, nrow = 2, heights = c(2,1.2))
+plot_both
+
+plot_both
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_all_biof.tiff", width = 16.5, height = 21, units = 'cm', res = 1200)
+plot_both
+
+dev.off()
+
+# together in different layout
+PH_sp_grouped <- rename(PH_sp_grouped,Site = "Species")
+
+PDMS_tot_sp <- rbind(PH_sp_grouped,site_grouped)
+PDMS_tot_sp$Site <- factor(PDMS_tot_sp$Site, levels = c("Waycobah (2018)","Little Narrows (2019)", "Port Hawkesbury (2019)", "C. intestinalis (PH, 2019)", "B. violaceus (PH, 2019)"))
+
+levels(PDMS_tot_sp$Site) = c("Waycobah (2018)"=expression(paste("Waycobah (2018)")),
+               "Little Narrows (2019)"=expression(paste("Little Narrows (2019)")),
+               "Port Hawkesbury (2019)"=expression(paste("Port Hawkesbury (2019)")),
+               "C. intestinalis (PH, 2019)"=expression(paste(italic("C. intestinalis "),"(PH, 2019)")),
+               "B. violaceus (PH, 2019)"=expression(paste(italic("B. violaceus "),"(PH, 2019)")))
+
+plot_both_t <- ggplot(data = PDMS_tot_sp, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt_n)) +
+    geom_point(aes(shape = Trt_n)) +
+    geom_line() +
+    geom_errorbar() +
+    scale_color_manual(values = cols, guide = FALSE) +
+    scale_shape_manual(values = shapes, guide = FALSE) +
+    facet_wrap("Site", scales = "free", nrow = 3, ncol = 2, labeller = label_parsed) +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in"), hjust = 0.145), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in")), strip.background = element_rect(color=NA, fill=NA, size=1.5, linetype="solid"), strip.text = element_text(hjust = 0.5, size = 12)) +
+    xlab("Days after deployment") +
+    ylab("Average cover (%)") +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 105), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+plot_both_t
+
+plot_both_t
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_all_biof_reorder.tiff", width = 16.5, height = 18, units = 'cm', res = 1200)
+plot_both_t
+```
+
+
+
+# functions
+
+## random effects
+
+### individually
+```{r}
+# Asymp
+rA <- function(x) {
+  nlme(x, random = Asymp ~ 1)
+}
+
+# xmid
+rX <- function(x) {
+  nlme(x, random = xmid ~ 1)
+}
+
+# scal
+rS <- function(x) {
+  nlme(x, random = scal ~ 1)
+}
+```
+
+### two random effects
+```{r}
+# Asymp and xmid
+rAX <- function(x) {
+  nlme(x, random = Asymp + xmid ~ 1)
+}
+
+# Asymp and scal
+rAS <- function(x) {
+  nlme(x, random = Asymp + scal ~ 1)
+}
+
+# xmid and scal
+rXS <- function(x) {
+  nlme(x, random = xmid + scal ~ 1)
+}
+```
+
+### all three
+```{r}
+rAXS <- function(x) {
+  nlme(x, random = Asymp + xmid + scal ~ 1)
+}
+```
+
+## fixed effects
+x is best random effect model, y is fixed effects for that model
+
+### individually
+```{r}
+# Asymp
+fA <- function(x,y) {
+  update(x, fixed = list(Asymp ~ Trt, xmid + scal ~ 1), start = c(Asymp = y[1], rep(0, 5), xmid = y[2], scal = y[3]))
+}
+
+# xmid
+fX <- function(x,y) {
+  update(x, fixed = list(xmid ~ Trt, Asymp + scal ~ 1), start = c(xmid = y[2], rep(0, 5), Asymp = y[1], scal = y[3]))
+}
+
+# scal
+fS <- function(x,y) {
+  update(x, fixed = list(scal ~ Trt, Asymp + xmid ~ 1), start = c( scal = y[3], rep(0, 5), Asymp = y[1], xmid = y[2]))
+}
+```
+
+### two fixed effects
+```{r}
+# Asymp and xmid
+fAX <- function(x,y) {
+  update(x, fixed = list(Asymp + xmid ~ Trt, scal ~ 1), start = c(Asymp = y[1], rep(0, 5), xmid = y[2], rep(0, 5), scal = y[3]))
+}
+
+# Asymp and scal
+fAS <- function(x,y) {
+  update(x, fixed = list(Asymp + scal ~ Trt, xmid ~ 1), start = c(Asymp = y[1], rep(0, 5), scal = y[3], rep(0, 5), xmid = y[2]))
+}
+
+# xmid and scal
+fXS <- function(x,y) {
+  update(x, fixed = list(Asymp ~ 1, xmid + scal ~ Trt), start = c(Asymp = y[1], xmid = y[2], rep(0, 5), scal = y[3], rep(0, 5)))
+}
+```
+
+### all fixed effects
+```{r}
+fAXS <- function(x,y) {
+  update(x, fixed = list(Asymp + xmid + scal ~ Trt), start = c(Asymp = y[1], rep(0, 5), xmid = y[2], rep(0, 5), scal = y[3], rep(0, 5)))
+}
+```
+
+# WB
+
+## group data
+```{r}
+WB_grp_code <- groupedData(Percent.cover ~ Days.after.Deployment|Code, data = PDMS_2018_WB)
+```
+
+## fit logistic to each individual (Code)
+```{r}
+WB_list <- nlsList(Percent.cover ~ SSlogis(Days.after.Deployment, Asymp, xmid, scal), data = WB_grp_code)
+coef(WB_list)
+```
+
+## Random effects
+
+### individually
+```{r}
+# Asymp
+WB_rA <- rA(WB_list)
+
+# xmid
+WB_rX <- rX(WB_list)
+
+# scal
+WB_rS <- rS(WB_list)
+```
+
+### two random effects
+```{r}
+# Asymp and xmid
+WB_rAX <- rAX(WB_list)
+
+# Asymp and scal doesnt converge
+
+# xmid and scal does not converge
+```
+
+### all three
+```{r}
+# does not converge
+```
+
+### compare models
+```{r}
+# (https://www.rdocumentation.org/packages/AICcmodavg/versions/2.3-1/topics/aictab)
+
+WB_models_r <- list()
+WB_models_r[["WB_rA"]] <- WB_rA
+WB_models_r[["WB_rX"]] <- WB_rX
+WB_models_r[["WB_rS"]] <- WB_rS
+WB_models_r[["WB_rAX"]] <- WB_rAX
+
+Modnames_WB_r <- paste(names(WB_models_r))
+
+# get table
+print(aictab(cand.set = WB_models_r, modnames = Modnames_WB_r, sort = TRUE), digits = 3, LL = TRUE)
+
+WB_best_r <- WB_rAX
+```
+
+### get fixed parameters for best model
+```{r}
+WB_fx <- fixef(WB_best_r)
+WB_fx
+```
+
+## Fixed effects
+
+### individually
+```{r}
+# Asymp
+WB_fA <- fA(WB_best_r, WB_fx)
+
+# xmid
+WB_fX <- fX(WB_best_r, WB_fx)
+
+# scal does not converge
+```
+
+### two fixed effects
+```{r}
+# Asymp and xmid
+WB_fAX <- fAX(WB_best_r, WB_fx)
+
+# Asymp and scal does not converge
+
+# xmid and scal
+WB_fXS <- fXS(WB_best_r, WB_fx)
+```
+
+### all three fixed effects
+```{r}
+WB_fAXS <- fAXS(WB_best_r, WB_fx)
+```
+
+
+### compare models
+```{r}
+# put into list
+WB_models <- list()
+WB_models[["WB_fA"]] <- WB_fA
+WB_models[["WB_fX"]] <- WB_fX
+WB_models[["WB_fAX"]] <- WB_fAX
+WB_models[["WB_fXS"]] <- WB_fXS
+WB_models[["WB_fAXS"]] <- WB_fAXS
+
+Modnames_WB <- paste(names(WB_models))
+
+# get table
+print(aictab(cand.set = WB_models, modnames = Modnames_WB, sort = TRUE), digits = 3, LL = TRUE)
+
+best_WB <- WB_fAX
+best_WB
+summary(best_WB)
+intervals(best_WB)
+```
+
+## contrast
+```{r}
+# contrast parameters
+contrast(emmeans(best_WB, ~Trt, param = "xmid"), "pairwise")
+contrast(emmeans(best_WB, ~Trt, param = "scal"), "pairwise")
+
+# Homogenous subsets
+em_WB_X <- emmeans(best_WB, ~Trt, param = "xmid")
+multcomp::cld(em_WB_X, Letters = letters)
+
+em_WB_S <- emmeans(best_WB, ~Trt, param = "scal")
+multcomp::cld(em_WB_S, Letters = letters)
+```
+
+## check assumptions
+```{r}
+plot(best_WB)
+hist(resid(best_WB, type="normalized"), main="", xlab="Residuals") 
+qqnorm(resid(best_WB, type="normalized"))
+qqline(resid(best_WB, type="normalized"))
+plot(ACF(best_WB), alpha = 0.01) 
+
+```
+
+## single point ANOVA at day 75
+logsitic equation assumes syetric around point of inflection: many data points at beginning, which have very fast change in growth makes the second half of growth slow quickly as well (therefore no difference between trt at day 75 - which is not accurate)
+```{r}
+PDMS_2018_WB_75 <- PDMS_2018_WB %>%
+  filter(Days.after.Deployment == "72")
+WB_75_anova <- aov(Percent.cover~Trt, data=PDMS_2018_WB_75)
+summary(WB_75_anova)
+HSD.test(WB_75_anova, "Trt", console=TRUE)
+```
+
+## Model accuracy assessment
+spearman rho, mean absolute error, root mean square error, model efficiency
+level as 0 in fitted() means there is no grouping
+
+### spearman's rho
+```{r}
+WB_fitted <- fitted(best_WB)
+WB_fitted_f <- fitted(best_WB, level = 0)
+WB_obs <- PDMS_2018_WB$Percent.cover
+
+WB_rho <- cor(WB_fitted, WB_obs, method = "spearman")
+WB_rho_f <- cor(WB_fitted_f, WB_obs, method = "spearman")
+```
+
+### mean absolute error
+```{r}
+WB_MAE <- mae(WB_fitted, WB_obs)
+WB_MAE_f <- mae(WB_fitted_f, WB_obs)
+```
+
+### root mean square error
+```{r}
+WB_RMSE <- rmse(WB_fitted, WB_obs)
+WB_RMSE_f <- rmse(WB_fitted_f, WB_obs)
+```
+
+### model efficiency
+```{r}
+# MEF package (JBTools) no longer available so need to use calculation
+
+WB_MEF <- MEF(WB_RMSE, WB_obs)
+WB_MEF_f <- MEF(WB_RMSE_f, WB_obs)
+```
+
+### all together
+```{r}
+WB_model_as <- list()
+WB_model_as[["WB_rho"]] <- WB_rho
+WB_model_as[["WB_rho_f"]] <- WB_rho_f
+WB_model_as[["WB_MAE"]] <- WB_MAE
+WB_model_as[["WB_MAE_f"]] <- WB_MAE_f
+WB_model_as[["WB_RMSE"]] <- WB_RMSE
+WB_model_as[["WB_RMSE_f"]] <- WB_RMSE_f
+WB_model_as[["WB_MEF"]] <- WB_MEF
+WB_model_as[["WB_MEF_f"]] <- WB_MEF_f
+
+names_WB_as <- paste(names(WB_model_as))
+values_WB_as <- paste(unlist(WB_model_as))
+
+WB_model_as_df <- data.frame(names_WB_as, values_WB_as)
+```
+
+### check with fixed effect on all three
+
+## contrast
+```{r}
+# contrast parameters
+contrast(emmeans(WB_fAXS, ~Trt, param = "Asymp"), "pairwise")
+contrast(emmeans(WB_fAXS, ~Trt, param = "xmid"), "pairwise")
+contrast(emmeans(WB_fAXS, ~Trt, param = "scal"), "pairwise")
+
+# Homogenous subsets
+em_WB_A_3 <- emmeans(WB_fAXS, ~Trt, param = "Asymp")
+multcomp::cld(em_WB_A_3, Letters = letters)
+
+em_WB_X_3 <- emmeans(WB_fAXS, ~Trt, param = "xmid")
+multcomp::cld(em_WB_X_3, Letters = letters)
+
+em_WB_S_3 <- emmeans(WB_fAXS, ~Trt, param = "scal")
+multcomp::cld(em_WB_S_3, Letters = letters)
+```
+
+
+
+# LN
+
+## group data
+```{r}
+LN_grp_code <- groupedData(Percent.cover ~ Days.after.Deployment|Code, data = PDMS_2019_LN)
+```
+
+## fit logistic to each individual (Code)
+```{r}
+LN_list <- nlsList(Percent.cover ~ SSlogis(Days.after.Deployment, Asymp, xmid, scal), data = LN_grp_code)
+coef(LN_list)
+```
+
+## Random effects
+
+### individually
+```{r}
+# Asymp
+LN_rA <- rA(LN_list)
+
+# xmid
+LN_rX <- rX(LN_list)
+
+# scal
+LN_rS <- rS(LN_list)
+```
+
+### two random effects
+```{r}
+# Asymp and xmid
+LN_rAX <- rAX(LN_list)
+
+# Asymp and scal doesnt converge
+LN_rAS <- rAS(LN_list)
+
+# xmid and scal
+LN_rXS <- rXS(LN_list)
+```
+
+### all three
+```{r}
+# does not converge
+```
+
+### compare models
+```{r}
+LN_models_r <- list()
+LN_models_r[["LN_rA"]] <- LN_rA
+LN_models_r[["LN_rX"]] <- LN_rX
+LN_models_r[["LN_rS"]] <- LN_rS
+LN_models_r[["LN_rAX"]] <- LN_rAX
+LN_models_r[["LN_rAS"]] <- LN_rAS
+LN_models_r[["LN_rXS"]] <- LN_rXS
+
+Modnames_LN_r <- paste(names(LN_models_r))
+
+# get table
+print(aictab(cand.set = LN_models_r, modnames = Modnames_LN_r, sort = TRUE), digits = 4, LL = TRUE)
+
+LN_best_r <- LN_rXS
+```
+
+### get fixed parameters for best model
+```{r}
+LN_fx <- fixef(LN_best_r)
+```
+
+## Fixed effects
+
+### individually
+```{r}
+# Asymp doesnt converge
+
+# xmid
+LN_fX <- fX(LN_best_r, LN_fx)
+
+# scal doesnt converge
+
+```
+
+### two fixed effects
+```{r}
+# Asymp and xmid doesnt converge
+
+# Asymp and scal does not converge
+
+# xmid and scal
+LN_fXS <- fXS(LN_best_r, LN_fx)
+```
+
+### all three fixed effects
+```{r}
+# does not converge
+```
+
+### compare models
+```{r}
+# put into list
+LN_models <- list()
+LN_models[["LN_fX"]] <- LN_fX
+LN_models[["LN_fXS"]] <- LN_fXS
+
+Modnames_LN <- paste(names(LN_models))
+
+# get table
+print(aictab(cand.set = LN_models, modnames = Modnames_LN, sort = TRUE), digits = 3, LL = TRUE)
+
+# best is fX (not significant difference between fX and fXS so use more parsimonious/one parameter)
+best_LN <- LN_fX
+best_LN
+summary(best_LN)
+intervals(best_LN)
+```
+
+## contrast
+```{r}
+# contrast parameters
+contrast(emmeans(best_LN, ~Trt, param = "xmid"), "pairwise")
+
+# Homogenous subsets
+em_LN_X <- emmeans(best_LN, ~Trt, param = "xmid")
+multcomp::cld(em_LN_X, Letters = letters)
+```
+
+## check assumptions
+```{r}
+plot(best_LN)
+hist(resid(best_LN, type="normalized"), main="", xlab="Residuals") 
+qqnorm(resid(best_LN, type="normalized"))
+qqline(resid(best_LN, type="normalized"))
+plot(ACF(best_LN), alpha = 0.01) 
+
+```
+
+## Model accuracy assessment
+spearman rho, mean absolute error, root mean square error, model efficiency
+
+### spearman's rho
+```{r}
+LN_fitted <- fitted(best_LN)
+LN_fitted_f <- fitted(best_LN, level = 0)
+LN_obs <- PDMS_2019_LN$Percent.cover
+
+LN_rho <- cor(LN_fitted, LN_obs, method = "spearman")
+LN_rho_f <- cor(LN_fitted_f, LN_obs, method = "spearman")
+```
+
+### mean absolute error
+```{r}
+LN_MAE <- mae(LN_fitted, LN_obs)
+LN_MAE_f <- mae(LN_fitted_f, LN_obs)
+```
+
+### root mean square error
+```{r}
+LN_RMSE <- rmse(LN_fitted, LN_obs)
+LN_RMSE_f <- rmse(LN_fitted_f, LN_obs)
+```
+
+### model efficiency
+```{r}
+# MEF package (JBTools) no longer available so need to use calculation
+
+LN_MEF <- MEF(LN_RMSE, LN_obs)
+LN_MEF_f <- MEF(LN_RMSE_f, LN_obs)
+```
+
+### all together
+```{r}
+LN_model_as <- list()
+LN_model_as[["LN_rho"]] <- LN_rho
+LN_model_as[["LN_rho_f"]] <- LN_rho_f
+LN_model_as[["LN_MAE"]] <- LN_MAE
+LN_model_as[["LN_MAE_f"]] <- LN_MAE_f
+LN_model_as[["LN_RMSE"]] <- LN_RMSE
+LN_model_as[["LN_RMSE_f"]] <- LN_RMSE_f
+LN_model_as[["LN_MEF"]] <- LN_MEF
+LN_model_as[["LN_MEF_f"]] <- LN_MEF_f
+
+names_LN_as <- paste(names(LN_model_as))
+values_LN_as <- paste(unlist(LN_model_as))
+
+LN_model_as_df <- data.frame(names_LN_as, values_LN_as)
+```
+
+# PH
+
+## group data
+```{r}
+PH_grp_code <- groupedData(Percent.cover ~ Days.after.Deployment|Code, data = PDMS_2019_PH)
+```
+
+## fit logistic to each individual (Code)
+```{r}
+PH_list <- nlsList(Percent.cover ~ SSlogis(Days.after.Deployment, Asymp, xmid, scal), data = PH_grp_code)
+coef(PH_list)
+```
+
+## Random effects
+
+### individually
+```{r}
+# Asymp
+PH_rA <- rA(PH_list)
+
+# xmid
+PH_rX <- rX(PH_list)
+
+# scal
+PH_rS <- rS(PH_list)
+```
+
+### two random effects
+```{r}
+# Asymp and xmid
+PH_rAX <- rAX(PH_list)
+
+# Asymp and scal
+PH_rAS <- rAS(PH_list)
+
+# xmid and scal does not converge
+```
+
+### all three
+```{r}
+# does not converge
+```
+
+### compare models
+```{r}
+PH_models_r <- list()
+PH_models_r[["PH_rA"]] <- PH_rA
+PH_models_r[["PH_rX"]] <- PH_rX
+PH_models_r[["PH_rS"]] <- PH_rS
+PH_models_r[["PH_rAX"]] <- PH_rAX
+PH_models_r[["PH_rAS"]] <- PH_rAS
+
+Modnames_PH_r <- paste(names(PH_models_r))
+
+# get table
+
+print(aictab(cand.set = PH_models_r, modnames = Modnames_PH_r, sort = TRUE), digits = 4, LL = TRUE)
+
+PH_best_r <- PH_rAX
+```
+
+### get fixed parameters for best model
+```{r}
+PH_fx <- fixef(PH_best_r)
+```
+
+## Fixed effects
+
+### individually
+```{r}
+# Asymp
+PH_fA <- fA(PH_best_r, PH_fx)
+
+# xmid
+PH_fX <- fX(PH_best_r, PH_fx)
+
+# scal
+PH_fS <- fS(PH_best_r, PH_fx)
+```
+
+### two fixed effects
+```{r}
+# Asymp and xmid
+PH_fAX <- fAX(PH_best_r, PH_fx)
+
+# Asymp and scal 
+PH_fAS <- fAS(PH_best_r, PH_fx)
+
+# xmid and scal
+PH_fXS <- fXS(PH_best_r, PH_fx)
+```
+
+### all three fixed effects
+```{r}
+# does not converge
+```
+
+### compare models cont
+```{r}
+# put into list
+PH_models <- list()
+PH_models[["PH_fA"]] <- PH_fA
+PH_models[["PH_fX"]] <- PH_fX
+PH_models[["PH_fS"]] <- PH_fS
+PH_models[["PH_fAX"]] <- PH_fAX
+PH_models[["PH_fAS"]] <- PH_fAS
+PH_models[["PH_fXS"]] <- PH_fXS
+
+Modnames_PH <- paste(names(PH_models))
+
+# get table
+print(aictab(cand.set = PH_models, modnames = Modnames_PH, sort = TRUE), digits = 4, LL = TRUE)
+
+# best is fAX
+best_PH <- PH_fAX
+best_PH
+summary(best_PH)
+intervals(best_PH)
+```
+
+## contrast
+```{r}
+# contrast parameters
+contrast(emmeans(best_PH, ~Trt, param = "Asymp"), "pairwise")
+contrast(emmeans(best_PH, ~Trt, param = "xmid"), "pairwise")
+
+# Homogenous subsets
+em_PH_A <- emmeans(best_PH, ~Trt, param = "Asymp")
+multcomp::cld(em_PH_A, Letters = letters)
+
+em_PH_X <- emmeans(best_PH, ~Trt, param = "xmid")
+multcomp::cld(em_PH_X, Letters = letters)
+```
+
+## check assumptions
+```{r}
+plot(best_PH)
+hist(resid(best_PH, type="normalized"), main="", xlab="Residuals") 
+qqnorm(resid(best_PH, type="normalized"))
+qqline(resid(best_PH, type="normalized"))
+plot(ACF(best_PH), alpha = 0.01) 
+```
+
+## Model accuracy assessment
+spearman rho, mean absolute error, root mean square error, model efficiency
+
+### spearman's rho
+```{r}
+PH_fitted <- fitted(best_PH)
+PH_fitted_f <- fitted(best_PH, level = 0)
+PH_obs <- PDMS_2019_PH$Percent.cover
+
+PH_rho <- cor(PH_fitted, PH_obs, method = "spearman")
+PH_rho_f <- cor(PH_fitted_f, PH_obs, method = "spearman")
+```
+
+### mean absolute error
+```{r}
+PH_MAE <- mae(PH_fitted, PH_obs)
+PH_MAE_f <- mae(PH_fitted_f, PH_obs)
+```
+
+### root mean square error
+```{r}
+PH_RMSE <- rmse(PH_fitted, PH_obs)
+PH_RMSE_f <- rmse(PH_fitted_f, PH_obs)
+```
+
+### model efficiency
+```{r}
+# MEF package (JBTools) no longer available so need to use calculation
+
+PH_MEF <- MEF(PH_RMSE, PH_obs)
+PH_MEF_f <- MEF(PH_RMSE_f, PH_obs)
+```
+
+### all together
+```{r}
+PH_model_as <- list()
+PH_model_as[["PH_rho"]] <- PH_rho
+PH_model_as[["PH_rho_f"]] <- PH_rho_f
+PH_model_as[["PH_MAE"]] <- PH_MAE
+PH_model_as[["PH_MAE_f"]] <- PH_MAE_f
+PH_model_as[["PH_RMSE"]] <- PH_RMSE
+PH_model_as[["PH_RMSE_f"]] <- PH_RMSE_f
+PH_model_as[["PH_MEF"]] <- PH_MEF
+PH_model_as[["PH_MEF_f"]] <- PH_MEF_f
+
+names_PH_as <- paste(names(PH_model_as))
+values_PH_as <- paste(unlist(PH_model_as))
+
+PH_model_as_df <- data.frame(names_PH_as, values_PH_as)
+```
+
+# Plots with confidence intervals
+
+## WB
+
+## overall predictions
+```{r}
+# By treatment
+fixef(best_WB)
+# Asymp same between treatments
+AW <- fixef(best_WB)[1]
+
+# O2
+XWO2 <- fixef(best_WB)[2]
+SWO2 <- fixef(best_WB)[8]
+## data
+WB_O2 <- subset(PDMS_2018_WB, Trt == "O2")
+
+#PP
+XWPP <- fixef(best_WB)[2] + fixef(best_WB)[6]
+SWPP <- fixef(best_WB)[8] + fixef(best_WB)[12]
+## data
+WB_PP <- subset(PDMS_2018_WB, Trt == "PP")
+
+#PV
+XWPV <- fixef(best_WB)[2] + fixef(best_WB)[7]
+SWPV <- fixef(best_WB)[8] + fixef(best_WB)[13]
+## data
+WB_PV <- subset(PDMS_2018_WB, Trt == "PV")
+
+#S1
+XWS1 <- fixef(best_WB)[2] + fixef(best_WB)[4]
+SWS1 <- fixef(best_WB)[8] + fixef(best_WB)[10]
+## data
+WB_S1 <- subset(PDMS_2018_WB, Trt == "S1")
+
+#S2
+XWS2 <- fixef(best_WB)[2] + fixef(best_WB)[5]
+SWS2 <- fixef(best_WB)[8] + fixef(best_WB)[11]
+## data
+WB_S2 <- subset(PDMS_2018_WB, Trt == "S2")
+
+#SO
+XWSO <- fixef(best_WB)[2] + fixef(best_WB)[3]
+SWSO <- fixef(best_WB)[8] + fixef(best_WB)[9]
+## data
+WB_SO <- subset(PDMS_2018_WB, Trt == "SO")
+
+```
+
+## plots
+```{r}
+## plot O2
+ggplot(WB_O2, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "darkgreen") +
+  stat_function(fun = function(x) AW/(1 + exp(-(x - XWO2)/SWO2)), colour = "darkgreen")+
+  ylim(0, 100)
+
+## plot PP
+ggplot(WB_PP, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "lightgreen") +
+  stat_function(fun = function(x) AW/(1 + exp(-(x - XWPP)/SWPP)), colour = "lightgreen")+
+  ylim(0, 100)
+
+## plot PV
+ggplot(WB_PV, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "darkblue") +
+  stat_function(fun = function(x) AW/(1 + exp(-(x - XWPV)/SWPV)), colour = "darkblue") +
+  ylim(0, 100) 
+
+## plot S1
+ggplot(WB_S1, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "lightblue") +
+  stat_function(fun = function(x) AW/(1 + exp(-(x - XWS1)/SWS1)), colour = "lightblue") +
+  ylim(0, 100) 
+
+## plot S2
+ggplot(WB_S2, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "red") +
+  stat_function(fun = function(x) AW/(1 + exp(-(x - XWS2)/SWS2)), colour = "red") +
+  ylim(0, 100)
+
+## plot SO
+ggplot(WB_SO, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "pink") +
+  stat_function(fun = function(x) AW/(1 + exp(-(x - XWSO)/SWSO)), colour = "pink") +
+  ylim(0, 100)
+```
+
+### all together
+```{r}
+ggplot() +
+  geom_point(WB_O2, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkgreen") +
+  stat_function(data = WB_O2, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWO2)/SWO2)), colour = "darkgreen") +
+  geom_point(WB_PP, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightgreen") +
+  stat_function(data = WB_PP, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWPP)/SWPP)), colour = "lightgreen") +
+  geom_point(WB_PV, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkblue") +
+  stat_function(data = WB_PV, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWPV)/SWPV)), colour = "darkblue") +
+  geom_point(WB_S1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightblue") +
+  stat_function(data = WB_S1, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWS1)/SWS1)), colour = "lightblue") +
+  geom_point(WB_S2, mapping = aes(Days.after.Deployment, Percent.cover), colour = "red") +
+  stat_function(data = WB_S2, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWS2)/SWS2)), colour = "red") + 
+  geom_point(WB_SO, mapping = aes(Days.after.Deployment, Percent.cover), colour = "pink") +
+  stat_function(data = WB_SO, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWSO)/SWSO)), colour = "pink") +
+  ylim(0, 100)
+```
+
+## plots iwth confidence intervals
+
+### overview of code
+
+ https://stats.stackexchange.com/questions/231074/confidence-intervals-on-predictions-for-a-non-linear-mixed-model-nlme
+ get sequence of xvalues along range
+xvals_O2<-  with(WB_O2,seq(min(Days.after.Deployment),max(Days.after.Deployment),length = 100))
+
+ specify treatent (need so nlme runs properly)
+Trt <- data.frame(Trt = "O2")
+Trt_144 <- Trt[rep(seq_len(nrow(Trt)), each = 100)]
+
+nresamp <- 1000
+
+ pick new parameter values by sampling from multivariate normal distribution based on fit
+pars.picked <- mvrnorm(nresamp, mu = fixef(best_WB), Sigma = vcov(best_WB))
+
+ predicted values
+pframe <- data.frame(Days.after.Deployment = xvals, Trt = Trt)
+pframe$Percent.cover <- predict(best_WB,newdata=pframe,level=0)
+
+ check if proper shape
+ggplot(pframe, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point() ## is approximate shape
+
+
+ utility function
+get_CI <- function(y,pref="") {
+    r1 <- t(apply(y,1,quantile,c(0.05,0.95)))
+    setNames(as.data.frame(r1),paste0(pref,c("lwr","upr")))
+}
+
+set.seed(101)
+yvals <- apply(pars.picked,1,
+               function(x) { SSlogis(xvals, x[1], x[7], x[13]) }
+)
+
+c1 <- get_CI(yvals)
+WB_O2_CI <- data.frame(pframe, c1)
+
+ plot
+ggplot(WB_O2,aes(Days.after.Deployment,Percent.cover))+
+    geom_point(WB_O2, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkgreen") +
+    stat_function(data = WB_O2, fun = function(Days.after.Deployment) AWO2/(1 + exp(-(Days.after.Deployment - XWO2)/SW)), colour = "darkgreen") +
+    geom_ribbon(data=WB_O2_CI,aes(ymin=lwr,ymax=upr),colour=NA,alpha=0.3,
+                fill="darkgreen")
+
+### function
+```{r}
+
+# function to get values of CI
+get_CI <- function(y,pref="") { 
+  r1 <- t(apply(y,1,quantile,c(0.05,0.95)))
+  setNames(as.data.frame(r1),paste0(pref,c("lwr","upr")))
+}
+
+# function for intercept (O1/2), df: dataframe (subset of site and treatment), trt: Treatment subsetted by (in ""), nl: best nlme for site, a, b & c: the coresponding column of the values for that treatment (in alphabetical order, depends on what fixed effects are)
+
+CI_int <- function(df, trt, nl, a, b, c){
+  xvals <- with(df, seq(min(Days.after.Deployment), max(Days.after.Deployment), length = 100))
+  Trt <- data.frame(Trt = trt)
+  Trt_144 <- Trt[rep(seq_len(nrow(Trt)), each = 100)]
+  pframe <- data.frame(Days.after.Deployment = xvals, Trt = Trt)
+  pframe$Percent.cover <- predict(nl, newdata = pframe, level = 0)
+  nresamp <- 1000
+  pars.picked <- mvrnorm(nresamp, mu = fixef(nl), Sigma = vcov(nl))
+  set.seed(101)
+  yvals <- apply(pars.picked,1,
+                 function(x) { SSlogis(xvals, x[a], x[b], x[c]) })
+  c1 <- get_CI(yvals)
+  data.frame(pframe, c1)
+}
+
+# WB function for  non intercepts (not O1/2), parameters same as above but d & e are the difference between intercept and trt from the data frame
+CI_W <- function(df, trt, nl, a, b, c, d, e){
+  xvals <- with(df, seq(min(Days.after.Deployment), max(Days.after.Deployment), length = 100))
+  Trt <- data.frame(Trt = trt)
+  Trt_144 <- Trt[rep(seq_len(nrow(Trt)), each = 100)]
+  pframe <- data.frame(Days.after.Deployment = xvals, Trt = Trt)
+  pframe$Percent.cover <- predict(nl, newdata = pframe, level = 0)
+  nresamp <- 1000
+  pars.picked <- mvrnorm(nresamp, mu = fixef(nl), Sigma = vcov(nl))
+  set.seed(101)
+  yvals <- apply(pars.picked,1,
+                 function(x) { SSlogis(xvals, x[a], x[b] + x[d], x[c] + x[e]) })
+  c1 <- get_CI(yvals)
+  data.frame(pframe, c1)
+}
+
+# PH function for  non intercepts (not O1/2), parameters same as above but d & e are the difference between intercept and trt from the data frame
+CI_P <- function(df, trt, nl, a, b, c, d, e){
+  xvals <- with(df, seq(min(Days.after.Deployment), max(Days.after.Deployment), length = 100))
+  Trt <- data.frame(Trt = trt)
+  Trt_144 <- Trt[rep(seq_len(nrow(Trt)), each = 100)]
+  pframe <- data.frame(Days.after.Deployment = xvals, Trt = Trt)
+  pframe$Percent.cover <- predict(nl, newdata = pframe, level = 0)
+  nresamp <- 1000
+  pars.picked <- mvrnorm(nresamp, mu = fixef(nl), Sigma = vcov(nl))
+  set.seed(101)
+  yvals <- apply(pars.picked,1,
+                 function(x) { SSlogis(xvals, x[a] + x[d], x[b] + x[e], x[c]) })
+  c1 <- get_CI(yvals)
+  data.frame(pframe, c1)
+}
+
+# LN function for  non intercepts (not O1/2)
+
+CI_L <- function(df, trt, nl, a, b, c, d){
+  xvals <- with(df, seq(min(Days.after.Deployment), max(Days.after.Deployment), length = 100))
+  Trt <- data.frame(Trt = trt)
+  Trt_144 <- Trt[rep(seq_len(nrow(Trt)), each = 100)]
+  pframe <- data.frame(Days.after.Deployment = xvals, Trt = Trt)
+  pframe$Percent.cover <- predict(nl, newdata = pframe, level = 0)
+  nresamp <- 1000
+  pars.picked <- mvrnorm(nresamp, mu = fixef(nl), Sigma = vcov(nl))
+  set.seed(101)
+  yvals <- apply(pars.picked,1,
+                 function(x) { SSlogis(xvals, x[a], x[b] + x[d], x[c]) })
+  c1 <- get_CI(yvals)
+  data.frame(pframe, c1)
+}
+
+# plot CI
+## df is subset of just one treatment from site, Asymp & xmid & scal are values from overall predictions, df_CI is CI of treatment, colour is colour of treatment in ""
+PDMS_CI_plot <- function(df, Asymp, xmid, scal, df_CI, col) {
+  ggplot(df, aes(Days.after.Deployment, Percent.cover))+
+    geom_point(df, mapping = aes(Days.after.Deployment, Percent.cover), colour = col) +
+    stat_function(data = df, fun = function(Days.after.Deployment) Asymp/(1 + exp(-(Days.after.Deployment - xmid)/scal)), colour = col) +
+    geom_ribbon(data= df_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,
+                fill= col) +
+    ylim(0, 100)
+}
+```
+
+### treatments
+```{r}
+# for reference
+nresamp <- 1000
+pars.picked.W <- mvrnorm(nresamp, mu = fixef(best_WB), Sigma = vcov(best_WB))
+
+# O2
+WB_O2_CI <- CI_int(WB_O2, "O2", best_WB, 1, 2, 8)
+WB_O2_CI_plot <- PDMS_CI_plot(WB_O2, AW, XWO2, SWO2, WB_O2_CI, "darkgreen")
+WB_O2_CI_plot
+
+#PP
+WB_PP_CI <- CI_W(WB_PP, "PP", best_WB, 1, 2, 8, 6, 12)
+WB_PP_CI_plot <- PDMS_CI_plot(WB_PP, AW, XWPP, SWPP, WB_PP_CI, "lightgreen")
+WB_PP_CI_plot
+
+#PV
+WB_PV_CI <- CI_W(WB_PV, "PV", best_WB, 1, 2, 8, 7, 13)
+WB_PV_CI_plot <- PDMS_CI_plot(WB_PV, AW, XWPV, SWPV, WB_PV_CI, "darkblue")
+WB_PV_CI_plot
+
+#S1
+WB_S1_CI <- CI_W(WB_S1, "S1", best_WB, 1, 2, 8, 4, 10)
+WB_S1_CI_plot <- PDMS_CI_plot(WB_S1, AW, XWS1, SWS1, WB_S1_CI, "lightblue")
+WB_S1_CI_plot
+
+#S2
+WB_S2_CI <- CI_W(WB_S2, "S2", best_WB, 1, 2, 8, 5, 11)
+WB_S2_CI_plot <- PDMS_CI_plot(WB_S2, AW, XWS2, SWS2, WB_S2_CI, "red")
+WB_S2_CI_plot
+
+#SO
+WB_SO_CI <- CI_W(WB_SO, "SO", best_WB, 1, 2, 8, 3, 9)
+WB_SO_CI_plot <- PDMS_CI_plot(WB_SO, AW, XWSO, SWSO, WB_SO_CI, "pink")
+WB_SO_CI_plot
+```
+
+
+### all together
+
+#### with points
+```{r}
+ggplot() +
+  geom_point(WB_O2, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkgreen") +
+  stat_function(data = WB_O2, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWO2)/SWO2)), colour = "darkgreen") +
+  geom_ribbon(data= WB_O2_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3, fill= "darkgreen") +
+  geom_point(WB_PP, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightgreen") +
+  stat_function(data = WB_PP, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWPP)/SWPP)), colour = "lightgreen") +
+  geom_ribbon(data= WB_PP_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightgreen") +
+  geom_point(WB_PV, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkblue") +
+  stat_function(data = WB_PV, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWPV)/SWPV)), colour = "darkblue") +
+  geom_ribbon(data= WB_PV_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "darkblue") +
+  geom_point(WB_S1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightblue") +
+  stat_function(data = WB_S1, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWS1)/SWS1)), colour = "lightblue") +
+  geom_ribbon(data= WB_S1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightblue") +
+  geom_point(WB_S2, mapping = aes(Days.after.Deployment, Percent.cover), colour = "red") +
+  stat_function(data = WB_S2, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWS2)/SWS2)), colour = "red") + 
+  geom_ribbon(data= WB_S2_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "red") +
+  geom_point(WB_SO, mapping = aes(Days.after.Deployment, Percent.cover), colour = "pink") +
+  stat_function(data = WB_SO, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWSO)/SWSO)), colour = "pink") +
+  geom_ribbon(data= WB_SO_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "pink") +
+  ylim(0, 100)
+
+```
+
+#### without points
+
+```{r}
+ggplot() +
+  stat_function(data = WB_O2, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWO2)/SWO2)), colour = "darkgreen") +
+  geom_ribbon(data= WB_O2_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3, fill= "darkgreen") +
+  stat_function(data = WB_PP, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWPP)/SWPP)), colour = "lightgreen") +
+  geom_ribbon(data= WB_PP_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightgreen") +
+  stat_function(data = WB_PV, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWPV)/SWPV)), colour = "darkblue") +
+  geom_ribbon(data= WB_PV_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "darkblue") +
+  stat_function(data = WB_S1, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWS1)/SWS1)), colour = "lightblue") +
+  geom_ribbon(data= WB_S1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightblue") +
+  stat_function(data = WB_S2, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWS2)/SWS2)), colour = "red") + 
+  geom_ribbon(data= WB_S2_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "red") +
+  stat_function(data = WB_SO, fun = function(Days.after.Deployment) AW/(1 + exp(-(Days.after.Deployment - XWSO)/SWSO)), colour = "pink") +
+  geom_ribbon(data= WB_SO_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "pink") +
+  ylim(0, 100)
+```
+
+## LN
+## overall predictions
+```{r}
+# By treatment
+fixef(best_LN)
+
+# Asymp and scal same between treatments
+SL <- fixef(best_LN)[8]
+AL <- fixef(best_LN)[7]
+
+# O1
+XLO1 <- fixef(best_LN)[1]
+## data
+LN_O1 <- subset(PDMS_2019_LN, Trt == "O1")
+
+#PP
+XLPP <- fixef(best_LN)[1] + fixef(best_LN)[5]
+## data
+LN_PP <- subset(PDMS_2019_LN, Trt == "PP")
+
+#PV
+XLPV <- fixef(best_LN)[1] + fixef(best_LN)[6]
+## data
+LN_PV <- subset(PDMS_2019_LN, Trt == "PV")
+
+#S1
+XLS1 <- fixef(best_LN)[1] + fixef(best_LN)[3]
+## data
+LN_S1 <- subset(PDMS_2019_LN, Trt == "S1")
+
+#S2
+XLS2 <- fixef(best_LN)[1] + fixef(best_LN)[4]
+## data
+LN_S2 <- subset(PDMS_2019_LN, Trt == "S2")
+
+#SO
+XLSO <- fixef(best_LN)[1] + fixef(best_LN)[2]
+## data
+LN_SO <- subset(PDMS_2019_LN, Trt == "SO")
+
+```
+
+## plots
+```{r}
+## plot O1
+ggplot(LN_O1, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "darkgreen") +
+  stat_function(fun = function(x) AL/(1 + exp(-(x - XLO1)/SL)), colour = "darkgreen") +
+  ylim(0, 100)
+
+## plot PP
+ggplot(LN_PP, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "lightgreen") +
+  stat_function(fun = function(x) AL/(1 + exp(-(x - XLPP)/SL)), colour = "lightgreen") +
+  ylim(0, 100)
+
+## plot PV
+ggplot(LN_PV, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "darkblue") +
+  stat_function(fun = function(x) AL/(1 + exp(-(x - XLPV)/SL)), colour = "darkblue") +
+  ylim(0, 100)
+
+## plot S1
+ggplot(LN_S1, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "lightblue") +
+  stat_function(fun = function(x) AL/(1 + exp(-(x - XLS1)/SL)), colour = "lightblue") +
+  ylim(0, 100)
+
+## plot S2
+ggplot(LN_S2, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "red") +
+  stat_function(fun = function(x) AL/(1 + exp(-(x - XLS2)/SL)), colour = "red") +
+  ylim(0, 100)
+
+## plot SO
+ggplot(LN_SO, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "pink") +
+  stat_function(fun = function(x) AL/(1 + exp(-(x - XLSO)/SL)), colour = "pink") +
+  ylim(0, 100)
+```
+
+### all together
+```{r}
+ggplot() +
+  geom_point(LN_O1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkgreen") +
+  stat_function(data = LN_O1, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLO1)/SL)), colour = "darkgreen") +
+  geom_point(LN_PP, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightgreen") +
+  stat_function(data = LN_PP, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLPP)/SL)), colour = "lightgreen") +
+  geom_point(LN_PV, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkblue") +
+  stat_function(data = LN_PV, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLPV)/SL)), colour = "darkblue") +
+  geom_point(LN_S1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightblue") +
+  stat_function(data = LN_S1, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLS1)/SL)), colour = "lightblue") +
+  geom_point(LN_S2, mapping = aes(Days.after.Deployment, Percent.cover), colour = "red") +
+  stat_function(data = LN_S2, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLS2)/SL)), colour = "red") + 
+  geom_point(LN_SO, mapping = aes(Days.after.Deployment, Percent.cover), colour = "pink") +
+  stat_function(data = LN_SO, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLSO)/SL)), colour = "pink") +
+  ylim(0, 100)
+```
+
+## plots with confidence intervals
+
+### treatments
+```{r}
+# for reference
+nresamp <- 1000
+pars.picked.L <- mvrnorm(nresamp, mu = fixef(best_LN), Sigma = vcov(best_LN))
+
+# O1
+LN_O1_CI <- CI_int(LN_O1, "O1", best_LN, 7, 1, 8)
+LN_O1_CI_plot <- PDMS_CI_plot(LN_O1, AL, XLO1, SL, LN_O1_CI, "darkgreen")
+LN_O1_CI_plot
+
+#PP
+LN_PP_CI <- CI_L(LN_PP, "PP", best_LN, 7, 1, 8, 5)
+LN_PP_CI_plot <- PDMS_CI_plot(LN_PP, AL, XLPP, SL, LN_PP_CI, "lightgreen")
+LN_PP_CI_plot
+
+#PV
+LN_PV_CI <- CI_L(LN_PV, "PV", best_LN, 7, 1, 8, 6)
+LN_PV_CI_plot <- PDMS_CI_plot(LN_PV, AL, XLPV, SL, LN_PV_CI, "darkblue")
+LN_PV_CI_plot
+
+#S1
+LN_S1_CI <- CI_L(LN_S1, "S1", best_LN, 7, 1, 8, 3)
+LN_S1_CI_plot <- PDMS_CI_plot(LN_S1, AL, XLS1, SL, LN_S1_CI, "lightblue")
+LN_S1_CI_plot
+
+#S2
+LN_S2_CI <- CI_L(LN_S2, "S2", best_LN, 7, 1, 8, 4)
+LN_S2_CI_plot <- PDMS_CI_plot(LN_S2, AL, XLS2, SL, LN_S2_CI, "red")
+LN_S2_CI_plot
+
+#SO
+LN_SO_CI <- CI_L(LN_SO, "SO", best_LN, 7, 1, 8, 2)
+LN_SO_CI_plot <- PDMS_CI_plot(LN_SO, AL, XLSO, SL, LN_SO_CI, "pink")
+LN_SO_CI_plot
+```
+
+
+### all together
+
+#### with points
+```{r}
+ggplot() +
+  geom_point(LN_O1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkgreen") +
+  stat_function(data = LN_O1, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLO1)/SL)), colour = "darkgreen") +
+  geom_ribbon(data= LN_O1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3, fill= "darkgreen") +
+  geom_point(LN_PP, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightgreen") +
+  stat_function(data = LN_PP, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLPP)/SL)), colour = "lightgreen") +
+  geom_ribbon(data= LN_PP_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightgreen") +
+  geom_point(LN_PV, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkblue") +
+  stat_function(data = LN_PV, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLPV)/SL)), colour = "darkblue") +
+  geom_ribbon(data= LN_PV_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "darkblue") +
+  geom_point(LN_S1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightblue") +
+  stat_function(data = LN_S1, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLS1)/SL)), colour = "lightblue") +
+  geom_ribbon(data= LN_S1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightblue") +
+  geom_point(LN_S2, mapping = aes(Days.after.Deployment, Percent.cover), colour = "red") +
+  stat_function(data = LN_S2, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLS2)/SL)), colour = "red") + 
+  geom_ribbon(data= LN_S2_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "red") +
+  geom_point(LN_SO, mapping = aes(Days.after.Deployment, Percent.cover), colour = "pink") +
+  stat_function(data = LN_SO, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLSO)/SL)), colour = "pink") +
+  geom_ribbon(data= LN_SO_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "pink") +
+  ylim(0, 100)
+```
+
+#### without points
+```{r}
+ggplot() +
+  stat_function(data = LN_O1, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLO1)/SL)), colour = "darkgreen") +
+  geom_ribbon(data= LN_O1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3, fill= "darkgreen") +
+  stat_function(data = LN_PP, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLPP)/SL)), colour = "lightgreen") +
+  geom_ribbon(data= LN_PP_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightgreen") +
+  stat_function(data = LN_PV, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLPV)/SL)), colour = "darkblue") +
+  geom_ribbon(data= LN_PV_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "darkblue") +
+  stat_function(data = LN_S1, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLS1)/SL)), colour = "lightblue") +
+  geom_ribbon(data= LN_S1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightblue") +
+  stat_function(data = LN_S2, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLS2)/SL)), colour = "red") + 
+  geom_ribbon(data= LN_S2_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "red") +
+  stat_function(data = LN_SO, fun = function(Days.after.Deployment) AL/(1 + exp(-(Days.after.Deployment - XLSO)/SL)), colour = "pink") +
+  geom_ribbon(data= LN_SO_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "pink") +
+  ylim(0, 100)
+```
+
+
+## PH
+## overall predictions
+```{r}
+# By treatment
+fixef(best_PH)
+
+# scal same between treatments
+SP <- fixef(best_PH)[13]
+
+# O1
+APO1 <- fixef(best_WB)[1]
+XPO1 <- fixef(best_PH)[7]
+
+## data
+PH_O1 <- subset(PDMS_2019_PH, Trt == "O1")
+
+#PP
+APPP <- fixef(best_PH)[1] + fixef(best_PH)[5]
+XPPP <- fixef(best_PH)[7] + fixef(best_PH)[11]
+## data
+PH_PP <- subset(PDMS_2019_PH, Trt == "PP")
+
+#PV
+APPV <- fixef(best_PH)[1] + fixef(best_PH)[6]
+XPPV <- fixef(best_PH)[7] + fixef(best_PH)[12]
+## data
+PH_PV <- subset(PDMS_2019_PH, Trt == "PV")
+
+#S1
+APS1 <- fixef(best_PH)[1] + fixef(best_PH)[3]
+XPS1 <- fixef(best_PH)[7] + fixef(best_PH)[9]
+## data
+PH_S1 <- subset(PDMS_2019_PH, Trt == "S1")
+
+#S2
+APS2 <- fixef(best_PH)[1] + fixef(best_PH)[4]
+XPS2 <- fixef(best_PH)[7] + fixef(best_PH)[10]
+## data
+PH_S2 <- subset(PDMS_2019_PH, Trt == "S2")
+
+#SO
+APSO <- fixef(best_PH)[1] + fixef(best_PH)[2]
+XPSO <- fixef(best_PH)[7] + fixef(best_PH)[8]
+## data
+PH_SO <- subset(PDMS_2019_PH, Trt == "SO")
+
+```
+
+## plots
+```{r}
+## plot O1
+ggplot(PH_O1, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "darkgreen") +
+  stat_function(fun = function(x) APO1/(1 + exp(-(x - XPO1)/SP)), colour = "darkgreen") +
+  ylim(0, 100)
+  
+## plot PP
+ggplot(PH_PP, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "lightgreen") +
+  stat_function(fun = function(x) APPP/(1 + exp(-(x - XPPP)/SP)), colour = "lightgreen") +
+  ylim(0, 100)
+
+## plot PV
+ggplot(PH_PV, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "darkblue") +
+  stat_function(fun = function(x) APPV/(1 + exp(-(x - XPPV)/SP)), colour = "darkblue") +
+  ylim(0, 100)
+
+## plot S1
+ggplot(PH_S1, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "lightblue") +
+  stat_function(fun = function(x) APS1/(1 + exp(-(x - XPS1)/SP)), colour = "lightblue") +
+  ylim(0, 100)
+
+## plot S2
+ggplot(PH_S2, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "red") +
+  stat_function(fun = function(x) APS2/(1 + exp(-(x - XPS2)/SP)), colour = "red") +
+  ylim(0, 100)
+
+## plot SO
+ggplot(PH_SO, mapping = aes(Days.after.Deployment, Percent.cover)) +
+  geom_point(colour = "pink") +
+  stat_function(fun = function(x) APSO/(1 + exp(-(x - XPSO)/SP)), colour = "pink") +
+  ylim(0, 100)
+```
+
+### all together
+```{r}
+ggplot() +
+  geom_point(PH_O1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkgreen") +
+  stat_function(data = PH_O1, fun = function(Days.after.Deployment) APO1/(1 + exp(-(Days.after.Deployment - XPO1)/SP)), colour = "darkgreen") +
+  geom_point(PH_PP, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightgreen") +
+  stat_function(data = PH_PP, fun = function(Days.after.Deployment) APPP/(1 + exp(-(Days.after.Deployment - XPPP)/SP)), colour = "lightgreen") +
+  geom_point(PH_PV, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkblue") +
+  stat_function(data = PH_PV, fun = function(Days.after.Deployment) APPV/(1 + exp(-(Days.after.Deployment - XPPV)/SP)), colour = "darkblue") +
+  geom_point(PH_S1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightblue") +
+  stat_function(data = PH_S1, fun = function(Days.after.Deployment) APS1/(1 + exp(-(Days.after.Deployment - XPS1)/SP)), colour = "lightblue") +
+  geom_point(PH_S2, mapping = aes(Days.after.Deployment, Percent.cover), colour = "red") +
+  stat_function(data = PH_S2, fun = function(Days.after.Deployment) APS2/(1 + exp(-(Days.after.Deployment - XPS2)/SP)), colour = "red") + 
+  geom_point(PH_SO, mapping = aes(Days.after.Deployment, Percent.cover), colour = "pink") +
+  stat_function(data = PH_SO, fun = function(Days.after.Deployment) APSO/(1 + exp(-(Days.after.Deployment - XPSO)/SP)), colour = "pink") +
+  ylim(0, 100)
+```
+
+### treatments
+```{r}
+# for reference
+nresamp <- 1000
+pars.picked.P <- mvrnorm(nresamp, mu = fixef(best_PH), Sigma = vcov(best_PH))
+
+# O1
+PH_O1_CI <- CI_int(PH_O1, "O1", best_PH, 1, 7, 13)
+PH_O1_CI_plot <- PDMS_CI_plot(PH_O1, APO1, XPO1, SP, PH_O1_CI, "darkgreen")
+PH_O1_CI_plot
+
+#PP
+PH_PP_CI <- CI_P(PH_PP, "PP", best_PH, 1, 7, 13, 5, 11)
+PH_PP_CI_plot <- PDMS_CI_plot(PH_PP, APPP, XPPP, SP, PH_PP_CI, "lightgreen")
+PH_PP_CI_plot
+
+#PV
+PH_PV_CI <- CI_P(PH_PV, "PV", best_PH, 1, 7, 13, 6, 12)
+PH_PV_CI_plot <- PDMS_CI_plot(PH_PV, APPV, XPPV, SP, PH_PV_CI, "darkblue")
+PH_PV_CI_plot
+
+#S1
+PH_S1_CI <- CI_P(PH_S1, "S1", best_PH, 1, 7, 13, 3, 9)
+PH_S1_CI_plot <- PDMS_CI_plot(PH_S1, APS1, XPS1, SP, PH_S1_CI, "lightblue")
+PH_S1_CI_plot
+
+#S2
+PH_S2_CI <- CI_P(PH_S2, "S2", best_PH, 1, 7, 13, 4, 10)
+PH_S2_CI_plot <- PDMS_CI_plot(PH_S2, APS2, XPS2, SP, PH_S2_CI, "red")
+PH_S2_CI_plot
+
+#SO
+PH_SO_CI <- CI_P(PH_SO, "SO", best_PH, 1, 7, 13, 2, 8)
+PH_SO_CI_plot <- PDMS_CI_plot(PH_SO, APSO, XPSO, SP, PH_SO_CI, "pink")
+PH_SO_CI_plot
+```
+
+
+### all together
+
+#### with points
+```{r}
+ggplot() +
+  geom_point(PH_O1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkgreen") +
+  stat_function(data = PH_O1, fun = function(Days.after.Deployment) APO1/(1 + exp(-(Days.after.Deployment - XPO1)/SP)), colour = "darkgreen") +
+  geom_ribbon(data= PH_O1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3, fill= "darkgreen") +
+  geom_point(PH_PP, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightgreen") +
+  stat_function(data = PH_PP, fun = function(Days.after.Deployment) APPP/(1 + exp(-(Days.after.Deployment - XPPP)/SP)), colour = "lightgreen") +
+  geom_ribbon(data= PH_PP_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightgreen") +
+  geom_point(PH_PV, mapping = aes(Days.after.Deployment, Percent.cover), colour = "darkblue") +
+  stat_function(data = PH_PV, fun = function(Days.after.Deployment) APPV/(1 + exp(-(Days.after.Deployment - XPPV)/SP)), colour = "darkblue") +
+  geom_ribbon(data= PH_PV_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "darkblue") +
+  geom_point(PH_S1, mapping = aes(Days.after.Deployment, Percent.cover), colour = "lightblue") +
+  stat_function(data = PH_S1, fun = function(Days.after.Deployment) APS1/(1 + exp(-(Days.after.Deployment - XPS1)/SP)), colour = "lightblue") +
+  geom_ribbon(data= PH_S1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightblue") +
+  geom_point(PH_S2, mapping = aes(Days.after.Deployment, Percent.cover), colour = "red") +
+  stat_function(data = PH_S2, fun = function(Days.after.Deployment) APS2/(1 + exp(-(Days.after.Deployment - XPS2)/SP)), colour = "red") + 
+  geom_ribbon(data= PH_S2_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "red") +
+  geom_point(PH_SO, mapping = aes(Days.after.Deployment, Percent.cover), colour = "pink") +
+  stat_function(data = PH_SO, fun = function(Days.after.Deployment) APSO/(1 + exp(-(Days.after.Deployment - XPSO)/SP)), colour = "pink") +
+  geom_ribbon(data= PH_SO_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "pink") +
+  ylim(0, 100)
+```
+
+#### without points
+
+```{r}
+ggplot() +
+  stat_function(data = PH_O1, fun = function(Days.after.Deployment) APO1/(1 + exp(-(Days.after.Deployment - XPO1)/SP)), colour = "darkgreen") +
+  geom_ribbon(data= PH_O1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3, fill= "darkgreen") +
+  stat_function(data = PH_PP, fun = function(Days.after.Deployment) APPP/(1 + exp(-(Days.after.Deployment - XPPP)/SP)), colour = "lightgreen") +
+  geom_ribbon(data= PH_PP_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightgreen") +
+  stat_function(data = PH_PV, fun = function(Days.after.Deployment) APPV/(1 + exp(-(Days.after.Deployment - XPPV)/SP)), colour = "darkblue") +
+  geom_ribbon(data= PH_PV_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "darkblue") +
+  stat_function(data = PH_S1, fun = function(Days.after.Deployment) APS1/(1 + exp(-(Days.after.Deployment - XPS1)/SP)), colour = "lightblue") +
+  geom_ribbon(data= PH_S1_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "lightblue") +
+  stat_function(data = PH_S2, fun = function(Days.after.Deployment) APS2/(1 + exp(-(Days.after.Deployment - XPS2)/SP)), colour = "red") + 
+  geom_ribbon(data= PH_S2_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "red") +
+  stat_function(data = PH_SO, fun = function(Days.after.Deployment) APSO/(1 + exp(-(Days.after.Deployment - XPSO)/SP)), colour = "pink") +
+  geom_ribbon(data= PH_SO_CI, aes(x = Days.after.Deployment, ymin=lwr,ymax=upr),colour=NA,alpha=0.3,fill= "pink") +
+  ylim(0, 100)
+```
+
+# attachment strength
+
+## imort data
+```{r}
+PDMS_atch <- read_excel("../PDMS 2018-2020 .xlsx", sheet = "All Atch Str", range = "A1:G238")
+names(PDMS_atch)<-make.names(names(PDMS_atch),unique = TRUE)
+```
+
+## set up data
+```{r}
+PDMS_atch_sums <- PDMS_atch %>%
+    filter(time != "EE")
+PDMS_atch_sums$Site <- gsub('LN', 'Little Narrows', PDMS_atch_sums$Site)
+PDMS_atch_sums$Site <- gsub('PH', 'Port Hawkesbury', PDMS_atch_sums$Site)
+PDMS_atch_sums$Site <- gsub('WB', 'Waycobah', PDMS_atch_sums$Site)
+PDMS_atch_sums$time <- as.numeric(PDMS_atch_sums$time)
+PDMS_atch_sum <- PDMS_atch_sums %>%
+    group_by(Trt.code.2, Site) %>%
+    summarize(se = std(time), avg_at = mean(time))
+PDMS_atch_sum$Trt.code.2 <- factor(PDMS_atch_sum$Trt.code.2,levels = c("O1", "O2", "SO", "S1", "S2", "PP", "PV"))
+
+#filter by site
+PDMS_at_WB <- PDMS_atch_sum %>%
+  filter(Site == "Waycobah")
+
+PDMS_at_LN <- PDMS_atch_sum %>%
+  filter(Site == "Little Narrows")
+
+PDMS_at_PH <- PDMS_atch_sum %>%
+  filter(Site == "Port Hawkesbury")
+```
+
+
+# plot ind site
+```{r}
+#plot each site
+at_WB <- ggplot(data = PDMS_at_WB, aes(Trt.code.2, avg_at, ymin = avg_at - se, ymax = avg_at + se, colour = Trt.code.2)) +
+  scale_color_grey(start = 0, end = 0.8) +
+  scale_fill_grey(start = 0, end = 0.8) +
+  geom_col(fill = NA, size = 1) +
+  geom_errorbar(colour = "black") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 30), breaks = seq(0, 30, 5), labels = every_nth(seq(0, 30, 5), 2, inverse = TRUE)) +
+  theme_classic(base_size = 12, base_family = "Arial") +
+  theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in"))) +
+  xlab("Treatment") +
+  ylab("Time until clean (s)")
+
+at_LN <- ggplot(data = PDMS_at_LN, aes(Trt.code.2, avg_at, ymin = avg_at - se, ymax = avg_at + se, colour = Trt.code.2)) +
+  scale_color_grey(start = 0, end = 0.8) +
+  scale_fill_grey(start = 0, end = 0.8) +
+  geom_col(fill = NA, size = 1) +
+  geom_errorbar(colour = "black") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 30), breaks = seq(0, 30, 5), labels = every_nth(seq(0, 30, 5), 2, inverse = TRUE)) +
+  theme_classic(base_size = 12, base_family = "Arial") +
+  theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in")), legend.title = element_text(colour = "white")) +
+  xlab("") +
+  ylab("Time until clean (s)")
+
+at_PH <- ggplot(data = PDMS_at_PH, aes(Trt.code.2, avg_at, ymin = avg_at - se, ymax = avg_at + se, colour = Trt.code.2)) +
+  scale_color_grey(start = 0, end = 0.8) +
+  scale_fill_grey(start = 0, end = 0.8) +
+  geom_col(fill = NA, size = 1) +
+  geom_errorbar(colour = "black") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 30), breaks = seq(0, 30, 5), labels = every_nth(seq(0, 30, 5), 2, inverse = TRUE)) +
+  theme_classic(base_size = 12, base_family = "Arial") +
+  theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in"))) +
+  xlab("") +
+  ylab("")
+
+#put plots together
+PDMS_atch_plot <- PDMS_atch_sum
+PDMS_atch_plot$Site <- gsub('Little Narrows', 'Experiment 2 (LN, 2019)', PDMS_atch_plot$Site)
+PDMS_atch_plot$Site <- gsub('Port Hawkesbury', 'Experiment 3 (PH, 2019)',  PDMS_atch_plot$Site)
+PDMS_atch_plot$Site <- gsub('Waycobah', 'Experiment 1 (WB, 2018)',  PDMS_atch_plot$Site)
+PDMS_atch_plot$Trt.code.2 <- ifelse(PDMS_atch_plot$Trt.code.2 == "O1", "TDA-9 + SO", ifelse(PDMS_atch_plot$Trt.code.2 == "O2", "13E6.5 + SO", ifelse(PDMS_atch_plot$Trt.code.2 == "S1", "TDA-9", ifelse(PDMS_atch_plot$Trt.code.2 == "S2", "13E6.5", ifelse(PDMS_atch_plot$Trt.code.2 == "PP", "PDMS", ifelse(PDMS_atch_plot$Trt.code.2 == "PV", "PVC", "SO"))))))
+PDMS_atch_plot$Trt.code.2_n <- ifelse(PDMS_atch_plot$Trt.code.2 == "TDA-9 + SO", "1", ifelse(PDMS_atch_plot$Trt.code.2 == "13E6.5 + SO", "2", ifelse(PDMS_atch_plot$Trt.code.2 == "SO", "3", ifelse(PDMS_atch_plot$Trt.code.2 == "TDA-9", "4", ifelse(PDMS_atch_plot$Trt.code.2 == "13E6.5", "5", ifelse(PDMS_atch_plot$Trt.code.2 == "PDMS", "6", "7"))))))
+
+PDMS_atch_plot$Trt.code.2 <- factor(PDMS_atch_plot$Trt.code.2, levels = c("PVC",  "PDMS", "13E6.5", "TDA-9", "SO", "13E6.5 + SO","TDA-9 + SO"))
+
+## full width
+plot_site_atch <- ggplot(data = PDMS_atch_plot, aes(Trt.code.2, avg_at, ymin = avg_at - se, ymax = avg_at + se, colour = Trt.code.2)) +
+  scale_color_grey(start = 0, end = 0.8) +
+  scale_fill_grey(start = 0, end = 0.8) +
+  geom_col(fill = NA, position = position_dodge(width = 0.7), width=0.8, size = 0.8) +
+  geom_errorbar(colour = "black", width = 0.8) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 30), breaks = seq(0, 30, 5), labels = every_nth(seq(0, 30, 5), 2, inverse = TRUE)) +
+  theme_classic() +
+  xlab("Treatment") +
+  ylab("Average removal time (s)") +
+  facet_rep_wrap("Site", ncol = 1) + 
+  theme(strip.text.x = element_text(size = 12), text = element_text(family = "Arial", size = 12), strip.background = element_rect(color="white"), legend.position = "none", axis.text.x = element_text(colour = "black", size = 10), axis.text.y = element_text(colour = "black", size = 10), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in"), size = 12), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in"), size = 12))
+plot_site_atch
+
+plot_site_atch
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch.tiff", width = 16.5, height = 16.5, units = 'cm', res = 1200)
+plot_site_atch
+
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch.jpg", width = 16.5, height = 16.5, units = 'cm', res = 1200)
+plot_site_atch
+dev.off()
+
+# all rows labelled
+plot_site_atch_all <- plot_site_atch + facet_rep_wrap("Site", ncol = 1, repeat.tick.labels = 'all') +
+  scale_x_discrete(labels = c("PVC",  "PDMS", "13E6.5", "TDA-9", "SO", "13E6.5\n+ SO","TDA-9\n+ SO"))
+plot_site_atch_all
+
+plot_site_atch_all
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_all.tiff", width = 16.5, height = 16.5, units = 'cm', res = 1200)
+plot_site_atch_all
+
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_all.jpg", width = 16.5, height = 16.5, units = 'cm', res = 1200)
+plot_site_atch_all
+dev.off()
+
+# 2 rows
+plot_site_atch_grid <- plot_site_atch + facet_rep_wrap("Site", ncol = 2, repeat.tick.labels = 'all') +
+  scale_x_discrete(labels = c("PVC",  "PDMS", "13E6.5", "TDA-9", "SO", "13E6.5\n+ SO","TDA-9\n+ SO"))
+plot_site_atch_grid
+
+plot_site_atch_grid
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_grid.tiff", width = 16.5, height = 16.5, units = 'cm', res = 1200)
+plot_site_atch_grid
+
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_grid.jpg", width = 16.5, height = 16.5, units = 'cm', res = 1200)
+plot_site_atch_grid
+dev.off()
+
+## half width
+plot_site_atch_half <- plot_site_atch +
+  facet_rep_wrap("Site", ncol = 1) + 
+  theme( strip.text.x = element_text(size = 12), text = element_text(family = "Arial", size = 12), strip.background = element_rect(color="white"), legend.position = "none", axis.text.x = element_text(colour = "black", size = 10, angle = 90, vjust=0.5, hjust=1), axis.text.y = element_text(colour = "black", size = 10), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in"), size = 12), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in"), size = 12))
+plot_site_atch_half
+
+plot_site_atch_half
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_half.tiff", width = 8.5, height = 24, units = 'cm', res = 1200)
+plot_site_atch_half
+
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_half.jpg", width = 8.5, height = 24, units = 'cm', res = 1200)
+plot_site_atch_half
+dev.off()
+
+
+# all rows labelled
+plot_site_atch_all_half <- plot_site_atch_half + facet_rep_wrap("Site", ncol = 1, repeat.tick.labels = 'all') +
+  scale_x_discrete(labels = c("PVC",  "PDMS", "13E6.5", "TDA-9", "SO", "13E6.5\n+ SO","TDA-9\n+ SO"))
+plot_site_atch_all_half
+
+plot_site_atch_all_half
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_all_h.tiff", width = 8.5, height = 20, units = 'cm', res = 1200)
+plot_site_atch_all_half
+
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_all_h.jpg", width = 8.5, height = 20, units = 'cm', res = 1200)
+plot_site_atch_all_half
+dev.off()
+
+## half width box plots
+#put plots together
+PDMS_atch_box <- PDMS_atch_sums
+PDMS_atch_box$Site <- gsub('Little Narrows', 'Experiment 2 (LN, 2019)', PDMS_atch_box$Site)
+PDMS_atch_box$Site <- gsub('Port Hawkesbury', 'Experiment 3 (PH, 2019)',  PDMS_atch_box$Site)
+PDMS_atch_box$Site <- gsub('Waycobah', 'Experiment 1 (WB, 2018)',  PDMS_atch_box$Site)
+PDMS_atch_box$Trt.code.2 <- ifelse(PDMS_atch_box$Trt.code.2 == "O1", "TDA-9 + SO", ifelse(PDMS_atch_box$Trt.code.2 == "O2", "13E6.5 + SO", ifelse(PDMS_atch_box$Trt.code.2 == "S1", "TDA-9", ifelse(PDMS_atch_box$Trt.code.2 == "S2", "13E6.5", ifelse(PDMS_atch_box$Trt.code.2 == "PP", "PDMS", ifelse(PDMS_atch_box$Trt.code.2 == "PV", "PVC", "SO"))))))
+PDMS_atch_box$Trt.code.2_n <- ifelse(PDMS_atch_box$Trt.code.2 == "TDA-9 + SO", "1", ifelse(PDMS_atch_box$Trt.code.2 == "13E6.5 + SO", "2", ifelse(PDMS_atch_box$Trt.code.2 == "SO", "3", ifelse(PDMS_atch_box$Trt.code.2 == "TDA-9", "4", ifelse(PDMS_atch_box$Trt.code.2 == "13E6.5", "5", ifelse(PDMS_atch_box$Trt.code.2 == "PDMS", "6", "7"))))))
+
+PDMS_atch_box$Trt.code.2 <- factor(PDMS_atch_box$Trt.code.2, levels = c("PVC",  "PDMS", "13E6.5", "TDA-9", "SO", "13E6.5 + SO","TDA-9 + SO"))
+
+PDMS_atch_boxs <- merge(PDMS_atch_plot, PDMS_atch_box, by = c('Trt.code.2', 'Site'))
+
+plot_site_atch_box <- ggplot(data = PDMS_atch_boxs, aes(Trt.code.2, time, colour = Trt.code.2)) +
+  scale_color_grey(start = 0.7, end = 0) +
+  scale_fill_grey(start = 0.8, end = 0) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 30), breaks = seq(0, 30, 5), labels = every_nth(seq(0, 30, 5), 2, inverse = TRUE)) +
+  theme_classic() +
+  xlab("Treatment") +
+  ylab("Removal time (s)") +
+  facet_rep_wrap("Site", ncol = 1) +  
+  theme( strip.text.x = element_text(size = 12), text = element_text(family = "Arial", size = 12), strip.background = element_rect(color="white"), legend.position = "none", axis.text.x = element_text(colour = "black", size = 10, angle = 90, vjust=0.5, hjust=1), axis.text.y = element_text(colour = "black", size = 10), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in"), size = 12), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in"), size = 12))
+plot_site_atch_box
+
+plot_site_atch_box
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_box.tiff", width = 8.5, height = 24, units = 'cm', res = 1200)
+plot_site_atch_box
+
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_site_atch_box.jpg", width = 8.5, height = 24, units = 'cm', res = 1200)
+plot_site_atch_box
+dev.off()
+
+```
+
+### plot with facet
+
+```{r}
+at_plot <- ggplot(data = PDMS_atch_sum, aes(Trt.code.2, avg_at, ymin = avg_at - se, ymax = avg_at + se, colour = Trt.code.2)) +
+  scale_color_grey(start = 0, end = 0.8) +
+  scale_fill_grey(start = 0, end = 0.8) +
+  geom_col(fill = NA, size = 1) +
+  geom_errorbar(colour = "black") +
+  facet_wrap(~ Site, scales='free', ncol = 2, nrow = 2) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 30), breaks = seq(0, 30, 5), labels = every_nth(seq(0, 30, 5), 2, inverse = TRUE)) +
+  theme_classic(base_size = 12, base_family = "Arial") +
+  theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in"), hjust = 0.175), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in")), strip.background = element_rect(color=NA, fill=NA, size=1.5, linetype="solid"), strip.text = element_text(hjust = 0, size = 12), legend.position="none") +
+  xlab("Treatment") +
+  ylab("Average removal time (s)")
+
+at_plot_col <- ggplot(data = PDMS_atch_sum, aes(Trt.code.2, avg_at, ymin = avg_at - se, ymax = avg_at + se, colour = Trt.code.2)) +
+  scale_color_grey(start = 0, end = 0.8) +
+  scale_fill_grey(start = 0, end = 0.8) +
+  geom_col(fill = NA) +
+  geom_errorbar(colour = "black", size = 0.3) +
+  facet_wrap(~ Site, scales='free', ncol = 2, nrow = 2) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 30), breaks = seq(0, 30, 5), labels = every_nth(seq(0, 30, 5), 2, inverse = TRUE)) +
+  theme_classic(base_size = 10, base_family = "Arial") +
+  theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(hjust = 0.175), strip.background = element_rect(color=NA, fill=NA, size=1.5, linetype="solid"), strip.text = element_text(hjust = 0, size = 10), legend.position="none") +
+  xlab("Treatment") +
+  ylab("Average removal time (s)")
+
+# saving full
+at_plot
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/atachment_strength_figure_full.tiff", width = 16.5, height = 16.5, units = 'cm', res = 1200)
+at_plot
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/atachment_strength_figure_full.jpg", width = 16.5, height = 16.5, units = 'cm', res = 1200)
+at_plot
+dev.off()
+
+# savind one column
+at_plot_col
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/atachment_strength_figure_col.jpg", width = 8.2, height = 8.2, units = 'cm', res = 1200)
+at_plot_col
+dev.off()
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/atachment_strength_figure_col.tiff", width = 8.2, height = 8.2, units = 'cm', res = 1200)
+at_plot_col
+dev.off()
+```
+
+# NLME for species
+
+# LN
+
+## Hydroids
+```{r}
+PDMS_LN_tub <- PDMS_2018_2020 %>%
+  filter(Site == "LN") %>%
+  dplyr::select(-("BG")) %>%
+  dplyr::select(-("BB")) %>%
+  dplyr::select("File":"Days.after.Deployment", "TubSp") %>%
+  rename("Percent.cover" = "TubSp")
+plotting_biof(PDMS_LN_tub)
+tub_plot <- plotting_biof_pub(PDMS_LN_tub)
+tub_plot_col <- plotting_biof_pub_col(PDMS_LN_tub)
+
+# saving full
+tub_plot
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/tub_plot_full.tiff", width = 16.5, height = 11, units = 'cm', res = 1200)
+tub_plot
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/tub_plot_full.jpg", width = 16.5, height = 11, units = 'cm', res = 1200)
+tub_plot
+dev.off()
+
+# saving one column
+tub_plot_col
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/tub_plot_col.jpg", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+tub_plot_col
+dev.off()
+tiff(file = "/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/tub_plot_col.tiff", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+tub_plot_col
+dev.off()
+```
+
+
+## group data
+```{r}
+LN_grp_code_tub <- groupedData(Percent.cover ~ Days.after.Deployment|Code, data = PDMS_LN_tub)
+```
+
+## fit logistic to each individual (Code)
+```{r}
+LN_list_tub <- nlsList(Percent.cover ~ SSlogis(Days.after.Deployment, Asymp, xmid, scal), data = LN_grp_code_tub)
+coef(LN_list_tub)
+```
+
+## Random effects
+
+### individually
+```{r}
+# Asymp
+LN_rA_tub <- rA(LN_list_tub)
+
+# xmid
+LN_rX_tub <- rX(LN_list_tub)
+
+# scal does not converge
+```
+
+### two random effects
+```{r}
+# Asymp and xmid
+LN_rAX_tub <- rAX(LN_list_tub)
+
+# Asymp and scal
+LN_rAS_tub <- rAS(LN_list_tub)
+
+# xmid and scal does not converge
+```
+
+### all three
+```{r}
+# does not converge
+```
+
+### compare models
+```{r}
+LN_models_tub <- list()
+LN_models_tub[["LN_rA_tub"]] <- LN_rA_tub
+LN_models_tub[["LN_rX_tub"]] <- LN_rX_tub
+LN_models_tub[["LN_rAX_tub"]] <- LN_rAX_tub
+LN_models_tub[["LN_rAS_tub"]] <- LN_rAS_tub
+
+Modnames_LN_tub <- paste(names(LN_models_tub))
+
+# get table
+print(aictab(cand.set = LN_models_tub, modnames = Modnames_LN_tub, sort = TRUE), digits = 3, LL = TRUE)
+
+LN_best_r_tub <- LN_rAX_tub
+```
+
+### get fixed parameters for best model
+```{r}
+LN_fx_tub <- fixef(LN_best_r_tub)
+```
+
+## Fixed effects
+
+### individually
+```{r}
+# Asymp doesnt converge
+
+# xmid
+LN_fX_tub <- fX(LN_best_r_tub, LN_fx_tub)
+
+# scal
+LN_fS_tub <- fS(LN_best_r_tub, LN_fx_tub)
+```
+
+### two fixed effects
+```{r}
+# Asymp and xmid doesnt converge
+
+# Asymp and scal 
+LN_fAS_tub <- fAS(LN_best_r_tub, LN_fx_tub)
+
+# xmid and scal
+LN_fXS_tub <- fXS(LN_best_r_tub, LN_fx_tub)
+```
+
+### all three fixed effects
+```{r}
+LN_fAXS_tub <- fAXS(LN_best_r_tub, LN_fx_tub)
+```
+
+### compare models
+```{r}
+LN_models_tub_f <- list()
+LN_models_tub_f[["LN_fX_tub"]] <- LN_fX_tub
+LN_models_tub_f[["LN_fS_tub"]] <- LN_fS_tub
+LN_models_tub_f[["LN_fAS_tub"]] <- LN_fAS_tub
+LN_models_tub_f[["LN_fXS_tub"]] <- LN_fXS_tub
+LN_models_tub_f[["LN_fAXS_tub"]] <- LN_fAXS_tub
+
+Modnames_LN_tub_f <- paste(names(LN_models_tub_f))
+
+# get table
+print(aictab(cand.set = LN_models_tub_f, modnames = Modnames_LN_tub_f, sort = TRUE), digits = 3, LL = TRUE)
+
+# best is fX (not significant difference between fX and fXS so use more parsimonious/one parameter)
+best_LN_tub <- LN_fAXS_tub
+best_LN_tub
+summary(best_LN_tub)
+intervals(best_LN_tub)
+```
+
+## contrast
+```{r}
+# contrast parameters
+contrast(emmeans(best_LN_tub, ~Trt, param = "Asymp"), "pairwise")
+contrast(emmeans(best_LN_tub, ~Trt, param = "xmid"), "pairwise")
+contrast(emmeans(best_LN_tub, ~Trt, param = "scal"), "pairwise")
+
+# Homogenous subsets
+em_LN_A_tub <- emmeans(best_LN_tub, ~Trt, param = "Asymp")
+multcomp::cld(em_LN_A_tub, Letters = letters)
+
+em_LN_X_tub <- emmeans(best_LN_tub, ~Trt, param = "xmid")
+multcomp::cld(em_LN_X_tub, Letters = letters)
+
+em_LN_S_tub <- emmeans(best_LN_tub, ~Trt, param = "scal")
+multcomp::cld(em_LN_S_tub, Letters = letters)
+```
+
+## check assumptions
+```{r}
+plot(best_LN_tub)
+hist(resid(best_LN_tub, type="normalized"), main="", xlab="Residuals") 
+qqnorm(resid(best_LN_tub, type="normalized"))
+qqline(resid(best_LN_tub, type="normalized"))
+plot(ACF(best_LN_tub), alpha = 0.01) 
+
+```
+
+## Model accuracy assessment
+spearman rho, mean absolute error, root mean square error, model efficiency
+
+### spearman's rho
+```{r}
+LN_tub_fitted <- fitted(best_LN_tub)
+LN_tub_fitted_f <- fitted(best_LN_tub, level = 0)
+LN_tub_obs <- PDMS_2019_LN$Percent.cover
+
+LN_tub_rho <- cor(LN_tub_fitted, LN_tub_obs, method = "spearman")
+LN_tub_rho_f <- cor(LN_tub_fitted_f, LN_tub_obs, method = "spearman")
+```
+
+### mean absolute error
+```{r}
+LN_tub_MAE <- mae(LN_tub_fitted, LN_tub_obs)
+LN_tub_MAE_f <- mae(LN_tub_fitted_f, LN_tub_obs)
+```
+
+### root mean square error
+```{r}
+LN_tub_RMSE <- rmse(LN_tub_fitted, LN_tub_obs)
+LN_tub_RMSE_f <- rmse(LN_tub_fitted_f, LN_tub_obs)
+```
+
+### model efficiency
+```{r}
+# MEF package (JBTools) no longer available so need to use calculation
+
+LN_tub_MEF <- MEF(LN_tub_RMSE, LN_tub_obs)
+LN_tub_MEF_f <- MEF(LN_tub_RMSE_f, LN_tub_obs)
+```
+
+### all together
+```{r}
+LN_tub_model_as <- list()
+LN_tub_model_as[["LN_tub_rho"]] <- LN_tub_rho
+LN_tub_model_as[["LN_tub_rho_f"]] <- LN_tub_rho_f
+LN_tub_model_as[["LN_tub_MAE"]] <- LN_tub_MAE
+LN_tub_model_as[["LN_tub_MAE_f"]] <- LN_tub_MAE_f
+LN_tub_model_as[["LN_tub_RMSE"]] <- LN_tub_RMSE
+LN_tub_model_as[["LN_tub_RMSE_f"]] <- LN_tub_RMSE_f
+LN_tub_model_as[["LN_tub_MEF"]] <- LN_tub_MEF
+LN_tub_model_as[["LN_tub_MEF_f"]] <- LN_tub_MEF_f
+
+names_LN_tub_as <- paste(names(LN_tub_model_as))
+values_LN_tub_as <- paste(unlist(LN_tub_model_as))
+
+LN_tub_model_as_df <- data.frame(names_LN_tub_as, values_LN_tub_as)
+```
+
+# PH
+
+## Ciona intestinalis
+
+```{r}
+PDMS_PH_cio <- PDMS_2018_2020 %>%
+  filter(Site == "PH") %>%
+  mutate(cio = CIO + SmC) %>%
+  dplyr::select(-("BG")) %>%
+  dplyr::select(-("BB")) %>%
+  dplyr::select("File":"Days.after.Deployment", "cio") %>%
+  rename("Percent.cover" = "cio")
+plotting_biof(PDMS_PH_cio)
+cio_plot <- plotting_biof_pub(PDMS_PH_cio)
+cio_plot_col <- plotting_biof_pub_col(PDMS_PH_cio)
+
+# saving full
+cio_plot
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/cio_plot_full.tiff", width = 16.5, height = 11, units = 'cm', res = 1200)
+cio_plot
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/cio_plot_full.jpg", width = 16.5, height = 11, units = 'cm', res = 1200)
+cio_plot
+dev.off()
+
+# saving one column
+cio_plot_col
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/cio_plot_col.jpg", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+cio_plot_col
+dev.off()
+tiff(file = "/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/cio_plot_col.tiff", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+cio_plot_col
+dev.off()
+```
+
+
+## group data
+```{r}
+PH_grp_code_cio <- groupedData(Percent.cover ~ Days.after.Deployment|Code, data = PDMS_PH_cio)
+```
+
+## fit logistic to each individual (Code)
+```{r}
+PH_list_cio <- nlsList(Percent.cover ~ SSlogis(Days.after.Deployment, Asymp, xmid, scal), data = PH_grp_code_cio)
+coef(PH_list_cio)
+```
+
+## Random effects
+
+### individually
+```{r}
+# Asymp
+PH_rA_cio <- rA(PH_list_cio)
+
+# xmid
+PH_rX_cio <- rX(PH_list_cio)
+
+# scal does not converge
+PH_rS_cio <- rS(PH_list_cio)
+```
+
+### two random effects
+```{r}
+# Asymp and xmid
+PH_rAX_cio <- rAX(PH_list_cio)
+
+# Asymp and scal does not converge
+
+# xmid and scal does not converge
+```
+
+### all three
+```{r}
+# does not converge
+```
+
+### compare models
+```{r}
+PH_models_cio <- list()
+PH_models_cio[["PH_rA_cio"]] <- PH_rA_cio
+PH_models_cio[["PH_rX_cio"]] <- PH_rX_cio
+PH_models_cio[["PH_rS_cio"]] <- PH_rS_cio
+PH_models_cio[["PH_rAX_cio"]] <- PH_rAX_cio
+
+Modnames_PH_cio <- paste(names(PH_models_cio))
+
+# get table
+print(aictab(cand.set = PH_models_cio, modnames = Modnames_PH_cio, sort = TRUE), digits = 3, LL = TRUE)
+
+PH_best_r_cio <- PH_rAX_cio
+```
+
+### get fixed parameters for best model
+```{r}
+PH_fx_cio <- fixef(PH_best_r_cio)
+```
+
+## Fixed effects
+
+### individually
+```{r}
+# Asymp doesnt converge
+PH_fA_cio <- fA(PH_best_r_cio, PH_fx_cio)
+
+# xmid
+PH_fX_cio <- fX(PH_best_r_cio, PH_fx_cio)
+
+# scal
+PH_fS_cio <- fS(PH_best_r_cio, PH_fx_cio)
+```
+
+### two fixed effects
+```{r}
+# Asymp and xmid
+PH_fAX_cio <- fAX(PH_best_r_cio, PH_fx_cio)
+
+# Asymp and scal 
+PH_fAS_cio <- fAS(PH_best_r_cio, PH_fx_cio)
+
+# xmid and scal
+PH_fXS_cio <- fXS(PH_best_r_cio, PH_fx_cio)
+```
+
+### all three fixed effects
+```{r}
+PH_fAXS_cio <- fAXS(PH_best_r_cio, PH_fx_cio)
+```
+
+### compare models
+```{r}
+PH_models_cio_f <- list()
+PH_models_cio_f[["PH_fA_cio"]] <- PH_fA_cio
+PH_models_cio_f[["PH_fX_cio"]] <- PH_fX_cio
+PH_models_cio_f[["PH_fS_cio"]] <- PH_fS_cio
+PH_models_cio_f[["PH_fAX_cio"]] <- PH_fAX_cio
+PH_models_cio_f[["PH_fAS_cio"]] <- PH_fAS_cio
+PH_models_cio_f[["PH_fXS_cio"]] <- PH_fXS_cio
+PH_models_cio_f[["PH_fAXS_cio"]] <- PH_fAXS_cio
+
+Modnames_PH_cio_f <- paste(names(PH_models_cio_f))
+
+# get table
+print(aictab(cand.set = PH_models_cio_f, modnames = Modnames_PH_cio_f, sort = TRUE), digits = 3, LL = TRUE)
+
+# best is fX (not significant difference between fX and fXS so use more parsimonious/one parameter)
+best_PH_cio <- PH_fAXS_cio
+best_PH_cio
+summary(best_PH_cio)
+intervals(best_PH_cio)
+```
+
+## contrast
+```{r}
+# contrast parameters
+contrast(emmeans(best_PH_cio, ~Trt, param = "Asymp"), "pairwise")
+contrast(emmeans(best_PH_cio, ~Trt, param = "xmid"), "pairwise")
+contrast(emmeans(best_PH_cio, ~Trt, param = "scal"), "pairwise")
+
+# Homogenous subsets
+em_PH_A_cio <- emmeans(best_PH_cio, ~Trt, param = "Asymp")
+multcomp::cld(em_PH_A_cio, Letters = letters)
+
+em_PH_X_cio <- emmeans(best_PH_cio, ~Trt, param = "xmid")
+multcomp::cld(em_PH_X_cio, Letters = letters)
+
+em_PH_S_cio <- emmeans(best_PH_cio, ~Trt, param = "scal")
+multcomp::cld(em_PH_S_cio, Letters = letters)
+```
+
+## check assumptions
+```{r}
+plot(best_PH_cio)
+hist(resid(best_PH_cio, type="normalized"), main="", xlab="Residuals") 
+qqnorm(resid(best_PH_cio, type="normalized"))
+qqline(resid(best_PH_cio, type="normalized"))
+plot(ACF(best_PH_cio), alpha = 0.01) 
+
+```
+
+## Model accuracy assessment
+spearman rho, mean absolute error, root mean square error, model efficiency
+
+### spearman's rho
+```{r}
+PH_cio_fitted <- fitted(best_PH_cio)
+PH_cio_fitted_f <- fitted(best_PH_cio, level = 0)
+PH_cio_obs <- PDMS_2019_PH$Percent.cover
+
+PH_cio_rho <- cor(PH_cio_fitted, PH_cio_obs, method = "spearman")
+PH_cio_rho_f <- cor(PH_cio_fitted_f, PH_cio_obs, method = "spearman")
+```
+
+### mean absolute error
+```{r}
+PH_cio_MAE <- mae(PH_cio_fitted, PH_cio_obs)
+PH_cio_MAE_f <- mae(PH_cio_fitted_f, PH_cio_obs)
+```
+
+### root mean square error
+```{r}
+PH_cio_RMSE <- rmse(PH_cio_fitted, PH_cio_obs)
+PH_cio_RMSE_f <- rmse(PH_cio_fitted_f, PH_cio_obs)
+```
+
+### model efficiency
+```{r}
+# MEF package (JBTools) no longer available so need to use calculation
+
+PH_cio_MEF <- MEF(PH_cio_RMSE, PH_cio_obs)
+PH_cio_MEF_f <- MEF(PH_cio_RMSE_f, PH_cio_obs)
+```
+
+### all together
+```{r}
+PH_cio_model_as <- list()
+PH_cio_model_as[["PH_cio_rho"]] <- PH_cio_rho
+PH_cio_model_as[["PH_cio_rho_f"]] <- PH_cio_rho_f
+PH_cio_model_as[["PH_cio_MAE"]] <- PH_cio_MAE
+PH_cio_model_as[["PH_cio_MAE_f"]] <- PH_cio_MAE_f
+PH_cio_model_as[["PH_cio_RMSE"]] <- PH_cio_RMSE
+PH_cio_model_as[["PH_cio_RMSE_f"]] <- PH_cio_RMSE_f
+PH_cio_model_as[["PH_cio_MEF"]] <- PH_cio_MEF
+PH_cio_model_as[["PH_cio_MEF_f"]] <- PH_cio_MEF_f
+
+names_PH_cio_as <- paste(names(PH_cio_model_as))
+values_PH_cio_as <- paste(unlist(PH_cio_model_as))
+
+PH_cio_model_as_df <- data.frame(names_PH_cio_as, values_PH_cio_as)
+```
+
+## colonial
+
+```{r}
+PDMS_PH_bot <- PDMS_2018_2020 %>%
+  filter(Site == "PH") %>%
+  mutate(bot = BOVO) %>%
+  dplyr::select(-("BG")) %>%
+  dplyr::select(-("BB")) %>%
+  dplyr::select("File":"Days.after.Deployment", "bot") %>%
+  rename("Percent.cover" = "bot")
+plotting_biof(PDMS_PH_bot)
+bot_plot <- plotting_biof_pub(PDMS_PH_bot)
+bot_plot_col <- plotting_biof_pub_col(PDMS_PH_bot)
+
+# saving full
+bot_plot
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/bot_plot_full.tiff", width = 16.5, height = 11, units = 'cm', res = 1200)
+bot_plot
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/bot_plot_full.jpg", width = 16.5, height = 11, units = 'cm', res = 1200)
+bot_plot
+dev.off()
+
+# saving one column
+bot_plot_col
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/bot_plot_col.jpg", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+bot_plot_col
+dev.off()
+tiff(file = "/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/bot_plot_col.tiff", width = 8.2, height = 5.5, units = 'cm', res = 1200)
+bot_plot_col
+dev.off()
+```
+
+## group data
+```{r}
+PH_grp_code_bot <- groupedData(Percent.cover ~ Days.after.Deployment|Code, data = PDMS_PH_bot)
+```
+
+## fit logistic to each individual (Code)
+```{r}
+PH_list_bot <- nlsList(Percent.cover ~ SSlogis(Days.after.Deployment, Asymp, xmid, scal), data = PH_grp_code_bot)
+coef(PH_list_bot)
+```
+
+## Random effects
+
+### individually
+```{r}
+# Asymp
+PH_rA_bot <- rA(PH_list_bot)
+
+# xmid
+PH_rX_bot <- rX(PH_list_bot)
+
+# scal does not converge
+PH_rS_bot <- rS(PH_list_bot)
+```
+
+### two random effects
+```{r}
+# Asymp and xmid does not converge
+
+# Asymp and scal does not converge
+
+# xmid and scal does not converge
+```
+
+### all three
+```{r}
+# does not converge
+```
+
+### compare models
+```{r}
+PH_models_bot <- list()
+PH_models_bot[["PH_rA_bot"]] <- PH_rA_bot
+PH_models_bot[["PH_rX_bot"]] <- PH_rX_bot
+PH_models_bot[["PH_rS_bot"]] <- PH_rS_bot
+
+Modnames_PH_bot <- paste(names(PH_models_bot))
+
+# get table
+print(aictab(cand.set = PH_models_bot, modnames = Modnames_PH_bot, sort = TRUE), digits = 3, LL = TRUE)
+
+PH_best_r_bot <- PH_rA_bot
+```
+
+### get fixed parameters for best model
+```{r}
+PH_fx_bot <- fixef(PH_best_r_bot)
+```
+
+## Fixed effects
+
+### individually
+```{r}
+# Asymp
+PH_fA_bot <- fA(PH_best_r_bot, PH_fx_bot)
+
+# xmid
+PH_fX_bot <- fX(PH_best_r_bot, PH_fx_bot)
+
+# scal does not converge
+```
+
+### two fixed effects
+```{r}
+# Asymp and xmid
+PH_fAX_bot <- fAX(PH_best_r_bot, PH_fx_bot)
+
+# Asymp and scal does not converge
+
+# xmid and scal does not converge
+```
+
+### all three fixed effects
+```{r}
+# does not converge
+```
+
+### compare models
+```{r}
+PH_models_bot_f <- list()
+PH_models_bot_f[["PH_fA_bot"]] <- PH_fA_bot
+PH_models_bot_f[["PH_fX_bot"]] <- PH_fX_bot
+PH_models_bot_f[["PH_fAX_bot"]] <- PH_fAX_bot
+
+Modnames_PH_bot_f <- paste(names(PH_models_bot_f))
+
+# get table
+print(aictab(cand.set = PH_models_bot_f, modnames = Modnames_PH_bot_f, sort = TRUE), digits = 3, LL = TRUE)
+
+# best is fX (not significant difference between fX and fXS so use more parsimonious/one parameter)
+best_PH_bot <- PH_fAX_bot
+best_PH_bot
+summary(best_PH_bot)
+intervals(best_PH_bot)
+```
+
+
+## contrast
+```{r}
+# contrast parameters
+contrast(emmeans(best_PH_bot, ~Trt, param = "Asymp"), "pairwise")
+contrast(emmeans(best_PH_bot, ~Trt, param = "xmid"), "pairwise")
+
+# Homogenous subsets
+em_PH_A_bot <- emmeans(best_PH_bot, ~Trt, param = "Asymp")
+multcomp::cld(em_PH_A_bot, Letters = letters)
+
+em_PH_X_bot <- emmeans(best_PH_bot, ~Trt, param = "xmid")
+multcomp::cld(em_PH_X_bot, Letters = letters)
+```
+
+## check assumptions
+```{r}
+plot(PH_best_r_bot)
+hist(resid(PH_best_r_bot, type="normalized"), main="", xlab="Residuals") 
+qqnorm(resid(PH_best_r_bot, type="normalized"))
+qqline(resid(PH_best_r_bot, type="normalized"))
+plot(ACF(PH_best_r_bot), alpha = 0.01) 
+
+```
+
+## Model accuracy assessment
+spearman rho, mean absolute error, root mean square error, model efficiency
+
+### spearman's rho
+```{r}
+PH_bot_fitted <- fitted(best_PH_bot)
+PH_bot_fitted_f <- fitted(best_PH_bot, level = 0)
+PH_bot_obs <- PDMS_2019_PH$Percent.cover
+
+PH_bot_rho <- cor(PH_bot_fitted, PH_bot_obs, method = "spearman")
+PH_bot_rho_f <- cor(PH_bot_fitted_f, PH_bot_obs, method = "spearman")
+```
+
+### mean absolute error
+```{r}
+PH_bot_MAE <- mae(PH_bot_fitted, PH_bot_obs)
+PH_bot_MAE_f <- mae(PH_bot_fitted_f, PH_bot_obs)
+```
+
+### root mean square error
+```{r}
+PH_bot_RMSE <- rmse(PH_bot_fitted, PH_bot_obs)
+PH_bot_RMSE_f <- rmse(PH_bot_fitted_f, PH_bot_obs)
+```
+
+### model efficiency
+```{r}
+# MEF package (JBTools) no longer available so need to use calculation
+
+PH_bot_MEF <- MEF(PH_bot_RMSE, PH_bot_obs)
+PH_bot_MEF_f <- MEF(PH_bot_RMSE_f, PH_bot_obs)
+```
+
+### all together
+```{r}
+PH_bot_model_as <- list()
+PH_bot_model_as[["PH_bot_rho"]] <- PH_bot_rho
+PH_bot_model_as[["PH_bot_rho_f"]] <- PH_bot_rho_f
+PH_bot_model_as[["PH_bot_MAE"]] <- PH_bot_MAE
+PH_bot_model_as[["PH_bot_MAE_f"]] <- PH_bot_MAE_f
+PH_bot_model_as[["PH_bot_RMSE"]] <- PH_bot_RMSE
+PH_bot_model_as[["PH_bot_RMSE_f"]] <- PH_bot_RMSE_f
+PH_bot_model_as[["PH_bot_MEF"]] <- PH_bot_MEF
+PH_bot_model_as[["PH_bot_MEF_f"]] <- PH_bot_MEF_f
+
+names_PH_bot_as <- paste(names(PH_bot_model_as))
+values_PH_bot_as <- paste(unlist(PH_bot_model_as))
+
+PH_bot_model_as_df <- data.frame(names_PH_bot_as, values_PH_bot_as)
+```
+
+## species plots together
+```{r}
+PDMS_WB <- dplyr::select(PDMS_2018_WB, -("BG")) %>%
+  dplyr::select(-("Grand.Total"))
+
+PDMS_WB$Site <- gsub('WB', 'M. edulis', PDMS_WB$Site)
+PDMS_LN_tub$Site <- gsub('LN', 'E. larynx', PDMS_LN_tub$Site)
+PDMS_PH_cio$Site <- gsub('PH', 'C. intestinalis', PDMS_PH_cio$Site)
+PDMS_PH_bot$Site <- gsub('PH', 'B. violaceus', PDMS_PH_bot$Site)
+
+PDMS_sp <- rbind(PDMS_LN_tub, PDMS_PH_cio, PDMS_PH_bot, PDMS_WB)
+
+PDMS_sp$Trt <- factor(PDMS_sp$Trt, levels = c("O1", "O2", "SO", "S1", "S2", "PP", "PV"))
+PDMS_sp$Site <- factor(PDMS_sp$Site, levels = c("M. edulis", "E. larynx", "C. intestinalis", "B. violaceus"))
+
+sp_grouped <- PDMS_sp %>% 
+    group_by(Days.after.Deployment, Trt, Site) %>%
+    summarize(se = std(Percent.cover), avg_PC = mean(Percent.cover))
+plot_sp <- ggplot(data = sp_grouped, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Trt)) +
+    geom_point(aes(shape = Trt)) +
+    geom_line() +
+    geom_errorbar() +
+    facet_wrap("Site", scales = "free", nrow = 2, ncol = 2) +
+    scale_colour_grey(start = 0, end = 0.8) +
+    theme_classic(base_size = 12, base_family = "Arial") +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in")), strip.background = element_rect(color=NA, fill=NA, size=1.5, linetype="solid"), strip.text = element_text(hjust = 0, size = 12, face = "italic")) +
+    xlab("Days after deployment") +
+    ylab("Average cover (%)") +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 100), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 100), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+  
+plot_sp
+tiff("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_sp_full.tiff", width = 16.5, height = 11, units = 'cm', res = 1200)
+plot_sp
+
+dev.off()
+jpeg("/Users/emmersonEmmerson/Documents/stfx/bio/honours/Black and white figures/plot_sp_full.jpg", width = 16.5, height = 11, units = 'cm', res = 1200)
+plot_sp
+dev.off()
+```
+
+
+
+# test for difference between oil/non-oil frames
+#### so we can combine oil/non oil frame controls in WB data
+
+## group by oil/non-oil frames
+```{r}
+PDMS_WB_oil <- PDMS_2018_WB %>%
+  filter(Trt != "S2") %>%
+  filter(Trt != "S1") %>%
+  filter(Trt != "O2") %>%
+  filter(Trt != "SO")
+
+PDMS_WB_oil$Treatment.code <-  as.factor(PDMS_WB_oil$Treatment.code)
+
+PDMS_WB_oil$OIL <- NA
+PDMS_WB_oil$OIL <- ifelse(PDMS_WB_oil$Treatment.code %in% c("PN", "BN"), "non-oil", "oil")
+WB_PV <- PDMS_WB_oil %>%
+  filter(Treatment.code != "PN") %>%
+  filter(Treatment.code != "PP")
+WB_PP <- PDMS_WB_oil %>%
+  filter(Treatment.code != "BN") %>%
+  filter(Treatment.code != "BO")
+
+WB_PV$Treatment.code <- factor(WB_PV$Treatment.code, levels = c("BO", "BN"))
+WB_PP$Treatment.code <- factor(WB_PP$Treatment.code, levels = c("PN", "PP"))
+```
+
+## plot
+```{r}
+plotting_biof_oil <- function(x) {
+  y <- x %>%
+    group_by(Days.after.Deployment, Treatment.code) %>%
+    summarize(se = std(Percent.cover), avg_PC = mean(Percent.cover))
+  ggplot(data = y, aes(Days.after.Deployment, avg_PC, ymin = avg_PC - se, ymax = avg_PC + se, colour = Treatment.code)) +
+    geom_point(aes(shape = Treatment.code), size = 0.75) +
+    geom_line(size = 0.3) +
+    geom_errorbar(size = 0.3) +
+    scale_colour_grey(start = 0, end = 0.8) +
+    theme_classic(base_size = 12, base_family = "Arial") +
+    theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"), axis.title.x = element_text(margin = margin(t = 0.12, unit = "in")), axis.title.y = element_text(margin = margin(r = 0.12, unit = "in")), line = element_line(size = 0.3)) +
+    xlab("Days after deployment") +
+    ylab("Average cover (%)") +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 100), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE)) + 
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 100), breaks = seq(0, 100, 5), labels = every_nth(seq(0, 100, 5), 5, inverse = TRUE))
+}
+
+plotting_biof_oil(PDMS_WB_oil)
+plotting_biof_oil(WB_PV)
+plotting_biof_oil(WB_PP)
+```
+
+## test for significant differences
+
+### new function because more treatments
+```{r}
+fA_WB_oil <- function(x,y) {
+  update(x, fixed = list(Asymp ~ Treatment.code, xmid + scal ~ 1), start = c(Asymp = y[1], rep(0, 1), xmid = y[2], scal = y[3]))
+}
+
+# one parameter
+# xmid
+fX_WB_oil <- function(x,y) {
+  update(x, fixed = list(xmid ~ Treatment.code, Asymp + scal ~ 1), start = c(xmid = y[2], rep(0, 1), Asymp = y[1], scal = y[3]))
+}
+
+# scal
+fS_WB_oil <- function(x,y) {
+  update(x, fixed = list(scal ~ Treatment.code, Asymp + xmid ~ 1), start = c( scal = y[3], rep(0, 1), Asymp = y[1], xmid = y[2]))
+}
+
+### two fixed effects
+# Asymp and xmid
+fAX_WB_oil <- function(x,y) {
+  update(x, fixed = list(Asymp + xmid ~ Treatment.code, scal ~ 1), start = c(Asymp = y[1], rep(0, 1), xmid = y[2], rep(0, 1), scal = y[3]))
+}
+
+# Asymp and scal
+fAS_WB_oil <- function(x,y) {
+  update(x, fixed = list(Asymp + scal ~ Treatment.code, xmid ~ 1), start = c(Asymp = y[1], rep(0, 1), scal = y[3], rep(0, 1), xmid = y[2]))
+}
+
+# xmid and scal
+fXS_WB_oil <- function(x,y) {
+  update(x, fixed = list(Asymp ~ 1, xmid + scal ~ Treatment.code), start = c(Asymp = y[1], xmid = y[2], rep(0, 1), scal = y[3], rep(0, 1)))
+}
+
+### all fixed effects
+fAXS_WB_oil <- function(x,y) {
+  update(x, fixed = list(Asymp + xmid + scal ~ Treatment.code), start = c(Asymp = y[1], rep(0, 1), xmid = y[2], rep(0, 1), scal = y[3], rep(0, 1)))
+}
+```
+
+### PV (Plain pvc)
+
+#### fit logistic to each individual (Code)
+```{r}
+WB_PV_grp <- groupedData(Percent.cover ~ Days.after.Deployment|Code, data = WB_PV)
+WB_PV_list <- nlsList(Percent.cover ~ SSlogis(Days.after.Deployment, Asymp, xmid, scal), data = WB_PV_grp)
+coef(WB_PV_list)
+```
+
+## Random effects
+### individually
+```{r}
+# Asymp
+WB_PV_rA <- rA(WB_PV_list)
+
+# xmid
+WB_PV_rX <- rX(WB_PV_list)
+
+# scal does not converge
+WB_PV_rS <- rS(WB_PV_list)
+```
+
+### two random effects
+```{r}
+# Asymp and xmid
+WB_PV_rAX <- rAX(WB_PV_list)
+
+# Asymp and scal doesnt converge
+
+# xmid and scal does not converge
+
+### all three does not converge
+```
+
+### compare models
+```{r}
+WB_PV_models <- list()
+WB_PV_models[["WB_PV_rA"]] <- WB_PV_rA
+WB_PV_models[["WB_PV_rX"]] <- WB_PV_rX
+WB_PV_models[["WB_PV_rS"]] <- WB_PV_rS
+WB_PV_models[["WB_PV_rAX"]] <- WB_PV_rAX
+
+Modnames_WB_PV <- paste(names(WB_PV_models))
+
+# get table
+print(aictab(cand.set = WB_PV_models, modnames = Modnames_WB_PV, sort = TRUE), digits = 3, LL = TRUE)
+
+WB_PV_best_r <- WB_PV_rAX
+```
+
+### get fixed parameters for best model
+```{r}
+WB_PV_fx <- fixef(WB_PV_best_r)
+WB_PV_fx
+```
+
+## Fixed effects
+### individually
+```{r}
+# Asymp does not converge
+WB_PV_fA <- fA_WB_oil(WB_PV_best_r, WB_PV_fx)
+
+# xmid
+WB_PV_fX <- fX_WB_oil(WB_PV_best_r, WB_PV_fx)
+
+# scal
+WB_PV_fS <- fS_WB_oil(WB_PV_best_r, WB_PV_fx)
+```
+
+
+### two fixed effects
+```{r}
+# Asymp and xmid does not converge
+WB_PV_fAX <- fAX_WB_oil(WB_PV_best_r, WB_PV_fx)
+
+# Asymp and scal
+WB_PV_fAS <- fAS_WB_oil(WB_PV_best_r, WB_PV_fx)
+
+# xmid and scal
+WB_PV_fXS <- fXS_WB_oil(WB_PV_best_r, WB_PV_fx)
+```
+
+### all three fixed effects
+```{r}
+# does not converge
+WB_PV_fAXS <- fAXS_WB_oil(WB_PV_best_r, WB_PV_fx)
+```
+
+### compare models
+```{r}
+WB_PV_models_f <- list()
+WB_PV_models_f[["WB_PV_fA"]] <- WB_PV_fA
+WB_PV_models_f[["WB_PV_fX"]] <- WB_PV_fX
+WB_PV_models_f[["WB_PV_fS"]] <- WB_PV_fS
+WB_PV_models_f[["WB_PV_fAX"]] <- WB_PV_fAX
+WB_PV_models_f[["WB_PV_fAS"]] <- WB_PV_fAS
+WB_PV_models_f[["WB_PV_fXS"]] <- WB_PV_fXS
+WB_PV_models_f[["WB_PV_fAXS"]] <- WB_PV_fAXS
+
+Modnames_WB_PV_f <- paste(names(WB_PV_models_f))
+
+# get table
+print(aictab(cand.set = WB_PV_models_f, modnames = Modnames_WB_PV_f, sort = TRUE), digits = 3, LL = TRUE)
+
+WB_PV_best <- WB_PV_fAS
+```
+
+## contrast
+```{r}
+# contrast parameters
+contrast(emmeans(WB_PV_best, ~Treatment.code, param = "Asymp"), "pairwise")
+contrast(emmeans(WB_PV_best, ~Treatment.code, param = "scal"), "pairwise")
+
+# Homogenous subsets
+em_WB_PV <- emmeans(WB_PV_best, ~Treatment.code, param = "Asymp")
+multcomp::cld(em_WB_PV, Letters = letters)
+
+em_WB_PV <- emmeans(WB_PV_best, ~Treatment.code, param = "scal")
+multcomp::cld(em_WB_PV, Letters = letters)
+```
+
+## check assumptions
+```{r}
+plot(WB_PV_best_r)
+hist(resid(WB_PV_best_r, type="normalized"), main="", xlab="Residuals") 
+qqnorm(resid(WB_PV_best_r, type="normalized"))
+qqline(resid(WB_PV_best_r, type="normalized"))
+plot(ACF(WB_PV_best_r), alpha = 0.01)
+```
+
+### PP (Plain PDMS)
+
+#### fit logistic to each individual (Code)
+```{r}
+WB_PP_grp <- groupedData(Percent.cover ~ Days.after.Deployment|Code, data = WB_PP)
+WB_PP_list <- nlsList(Percent.cover ~ SSlogis(Days.after.Deployment, Asymp, xmid, scal), data = WB_PP_grp)
+coef(WB_PP_list)
+```
+
+## Random effects
+### individually
+```{r}
+# Asymp
+WB_PP_rA <- rA(WB_PP_list)
+
+# xmid
+WB_PP_rX <- rX(WB_PP_list)
+
+# scal does not converge
+WB_PP_rS <- rS(WB_PP_list)
+```
+
+### two random effects
+```{r}
+# Asymp and xmid
+WB_PP_rAX <- rAX(WB_PP_list)
+
+# Asymp and scal doesnt converge
+
+# xmid and scal
+WB_PP_rXS <- rXS(WB_PP_list)
+
+### all three
+WB_PP_rAXS <- rAXS(WB_PP_list)
+```
+
+### compare models
+```{r}
+WB_PP_models <- list()
+WB_PP_models[["WB_PP_rA"]] <- WB_PP_rA
+WB_PP_models[["WB_PP_rX"]] <- WB_PP_rX
+WB_PP_models[["WB_PP_rS"]] <- WB_PP_rS
+WB_PP_models[["WB_PP_rAX"]] <- WB_PP_rAX
+WB_PP_models[["WB_PP_rXS"]] <- WB_PP_rXS
+WB_PP_models[["WB_PP_rAXS"]] <- WB_PP_rAXS
+
+Modnames_WB_PP <- paste(names(WB_PP_models))
+
+# get table
+print(aictab(cand.set = WB_PP_models, modnames = Modnames_WB_PP, sort = TRUE), digits = 3, LL = TRUE)
+
+WB_PP_best_r <- WB_PP_rAXS
+```
+
+### get fixed parameters for best model
+```{r}
+WB_PP_fx <- fixef(WB_PP_best_r)
+WB_PP_fx
+```
+
+## Fixed effects
+### individually
+```{r}
+# Asymp
+WB_PP_fA <- fA_WB_oil(WB_PP_best_r, WB_PP_fx)
+
+# xmid  does not converge
+
+# scal does not converge
+```
+
+
+### two fixed effects
+```{r}
+# Asymp and xmid does not converge
+
+# Asymp and scal
+
+# xmid and scal
+```
+
+### all three fixed effects
+```{r}
+# does not converge
+```
+
+### compare models
+```{r}
+WB_PP_best <- WB_PP_fA
+```
+
+## contrast
+```{r}
+# contrast parameters
+contrast(emmeans(WB_PP_best, ~Treatment.code, param = "Asymp"), "pairwise")
+
+# Homogenous subsets
+em_WB_PP <- emmeans(WB_PP_best, ~Treatment.code, param = "Asymp")
+multcomp::cld(em_WB_PP, Letters = letters)
+```
+
+## check assumptions
+```{r}
+plot(WB_PP_best_r)
+hist(resid(WB_PP_best_r, type="normalized"), main="", xlab="Residuals") 
+qqnorm(resid(WB_PP_best_r, type="normalized"))
+qqline(resid(WB_PP_best_r, type="normalized"))
+plot(ACF(WB_PP_best_r), alpha = 0.01)
+```
+
